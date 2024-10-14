@@ -77,7 +77,7 @@ Stmt
     : RETURN Number ';'
     {
         auto ast=new StmtAST();
-        ast->ret="return";
+        ast->ret="ret";
         ast->number=$2;
         $$=ast;
     }

@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <fstream>
 #include <memory>
 #include <string>
 #include "AST.hpp"
@@ -24,7 +25,10 @@ int main(int argc, const char *argv[]) {
   auto ret = yyparse(ast);
   assert(!ret);
 
-  ast->Dump();
-  cout << endl;
+  ofstream file(output);
+  streambuf* oldCoutBuffer=cout.rdbuf(file.rdbuf());
+  ast->GenerateIR();
+  //cout << endl;
+  cout.rdbuf(oldCoutBuffer);
   return 0;
 }
