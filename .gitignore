@@ -2,3 +2,5 @@ debug/
 build/
 *.koopa
 .vscode
+*.s
+koopa.h
