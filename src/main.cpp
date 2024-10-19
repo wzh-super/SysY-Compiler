@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <iostream>
+#include <cstring>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -25,10 +26,13 @@ int main(int argc, const char *argv[]) {
   auto ret = yyparse(ast);
   assert(!ret);
 
-  ofstream file(output);
-  streambuf* oldCoutBuffer=cout.rdbuf(file.rdbuf());
-  ast->GenerateIR();
-  //cout << endl;
-  cout.rdbuf(oldCoutBuffer);
+  string koopaIR;
+  ast->GenerateIR(koopaIR);
+
+  if(strcmp(mode,"-koopa")==0){
+    ofstream out(output);
+    out << koopaIR;
+    out.close();
+  }
   return 0;
 }

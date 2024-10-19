@@ -3,12 +3,13 @@
 #include <memory>
 #include <string>
 #include<iostream>
+using namespace std;
 
 class BaseAST {
 public:
     virtual ~BaseAST() = default;
     virtual void Dump() const =0;
-    virtual void GenerateIR() const=0;
+    virtual void GenerateIR(string& s) const=0;
 };
 
 class CompUnitAST:public BaseAST{
@@ -21,8 +22,8 @@ public:
         std::cout<<" }";
     }
 
-    void GenerateIR() const override{
-        func_def->GenerateIR();
+    void GenerateIR(string& s) const override{
+        func_def->GenerateIR(s);
     }
 };
 
@@ -40,12 +41,12 @@ public:
         std::cout<<" }";
     }
 
-    void GenerateIR() const override{
-        std::cout<<"fun @"<<ident<<"(): ";
-        functype->GenerateIR();
-        std::cout<<" {"<< std::endl;
-        block->GenerateIR();
-        std::cout<<"}";
+    void GenerateIR(string& s) const override{
+        s+="fun @"+ident+"(): ";
+        functype->GenerateIR(s);
+        s+=" {\n";
+        block->GenerateIR(s);
+        s+="}";
     }
 };
 
@@ -57,9 +58,9 @@ public:
         std::cout<<"FuncTypeAST { "<<type<<" }";
     }
 
-    void GenerateIR() const override{
+    void GenerateIR(string& s) const override{
         if (type=="int")
-            std::cout<<"i32";
+            s+="i32";
     }
 };
 
@@ -73,9 +74,9 @@ public:
         std::cout<<" }";
     }
 
-    void GenerateIR() const override{
-        std::cout<<"%entry:"<<std::endl;
-        stmt->GenerateIR();
+    void GenerateIR(string& s) const override{
+        s+="%entry:\n";
+        stmt->GenerateIR(s);
     }
 };
 
@@ -88,8 +89,8 @@ public:
         std::cout<<"StmtAST { "<<number<<" }";
     }
 
-    void GenerateIR() const override{
-        std::cout<<"  ret "<<number<<std::endl;
+    void GenerateIR(string& s) const override{
+        s+="  ret "+std::to_string(number)+"\n";
     }
 };
 
