@@ -27,12 +27,12 @@ using namespace std;
 }
 
 %token INT RETURN
-%token <str_val> IDENT
+%token <str_val> IDENT 
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp Number
+%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp
 
-%type <str_val> UnaryOp
+%type <str_val> UnaryOp MulOp AddOp
 
 
 %%
@@ -88,7 +88,15 @@ Exp
     : UnaryExp
     {
         auto ast=new ExpAST();
+        ast->kind=ExpAST::Kind::Unary;
         ast->unaryexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | AddExp
+    {
+        auto ast=new ExpAST();
+        ast->kind=ExpAST::Kind::Add;
+        ast->addexp=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;
@@ -105,7 +113,7 @@ UnaryExp
     {
         auto ast=new UnaryExpAST();
         ast->kind=UnaryExpAST::Kind::Unary;
-        ast->unaryop=*$1;
+        ast->unaryop=*unique_ptr<string>($1);
         ast->unaryexp=unique_ptr<BaseAST>($2);
         $$=ast;
     }
@@ -130,19 +138,50 @@ PrimaryExp
 
 UnaryOp
     : '+'
-    {
-        string s="+";
-        $$=&s;
+    {   
+        string* str=new string("+");
+        $$=str;
     }
     | '-'
     {
-        string s="-";
-        $$=&s;
+        string* str=new string("-");
+        $$=str;
     }
     | '!'
     {
-        string s="!";
-        $$=&s;
+        string* str=new string("!");
+        $$=str;
+    }
+    ;
+
+MulOp
+    : '*'
+    {
+        string* str=new string("*");
+        $$=str;
+    }
+    | '/'
+    {
+        string* str=new string("/");
+        $$=str;
+    }
+    | '%'
+    {
+        string* str=new string("%");
+        $$=str;
+    }
+    ;
+
+AddOp
+    : '+'
+    {
+        string* str=new string("+");
+        $$=str;
+    }
+    | '-'
+    {
+        string* str=new string("-");
+        $$=str;
     }
     ;
 
@@ -155,6 +194,40 @@ Number
     }
     ;
 
+MulExp
+    : UnaryExp
+    {
+        auto ast=new MulExpAST();
+        ast->kind=MulExpAST::Kind::Unary;
+        ast->unaryexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | MulExp MulOp UnaryExp
+    {
+        auto ast=new MulExpAST();
+        ast->kind=MulExpAST::Kind::Mult;
+        ast->mulexp=unique_ptr<BaseAST>($1);
+        ast->op=*unique_ptr<string>($2);
+        ast->unaryexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+AddExp
+    :MulExp
+    {
+        auto ast=new AddExpAST();
+        ast->kind=AddExpAST::Kind::Mul;
+        ast->mulexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | AddExp AddOp MulExp
+    {
+        auto ast=new AddExpAST();
+        ast->kind=AddExpAST::Kind::Add;
+        ast->addexp=unique_ptr<BaseAST>($1);
+        ast->op=*unique_ptr<string>($2);
+        ast->mulexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
 %%
 
 void yyerror(unique_ptr<BaseAST>& ast,const char* s){

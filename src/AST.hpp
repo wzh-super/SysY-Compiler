@@ -122,16 +122,34 @@ public:
 
 class ExpAST:public BaseAST{
 public:
+    enum class Kind{Unary,Add};
+    Kind kind;
     std::unique_ptr<BaseAST> unaryexp;
+    std::unique_ptr<BaseAST> addexp;
 
     void Dump() const override{
         std::cout<<"ExpAST { ";
-        unaryexp->Dump();
+        switch (kind){
+            case Kind::Unary:
+                unaryexp->Dump();
+                break;
+            case Kind::Add:
+                addexp->Dump();
+                break;
+        }
         std::cout<<" }";
     }
     //生成IR时，返回目前变量的名字
     string GenerateIR(string& s) const override{
-        string value=unaryexp->GenerateIR(s);
+        string value;
+        switch (kind){
+            case Kind::Unary:
+                value=unaryexp->GenerateIR(s);
+                break;
+            case Kind::Add:
+                value=addexp->GenerateIR(s);
+                break;
+        }
         return value;
     }
 };
@@ -215,6 +233,107 @@ public:
                     next_val=current_val;
                 }
                 break;
+        }
+        return next_val;
+    }
+};
+
+class MulExpAST:public BaseAST{
+public:
+    enum class Kind{Unary,Mult};
+    Kind kind;
+    std::unique_ptr<BaseAST> unaryexp;
+    std::string op;
+    std::unique_ptr<BaseAST> mulexp;
+
+    void Dump() const override{
+        std::cout<<"MulExpAST { ";
+        switch (kind){
+            case Kind::Unary:
+                unaryexp->Dump();
+                break;
+            case Kind::Mult:
+                mulexp->Dump();
+                std::cout<<op;
+                unaryexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::Unary:
+                current_val_2=unaryexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::Mult:
+                current_val_1=mulexp->GenerateIR(s);
+                current_val_2=unaryexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                switch (op[0]){
+                    case '*':
+                        s+="  "+next_val+" = mul "+current_val_1+", "+current_val_2+"\n";
+                        break;
+                    case '/':
+                        s+="  "+next_val+" = div "+current_val_1+", "+current_val_2+"\n";
+                        break;
+                    case '%':
+                        s+="  "+next_val+" = mod "+current_val_1+", "+current_val_2+"\n";
+                        break;
+                }
+        }
+        return next_val;
+    }
+};
+
+class AddExpAST:public BaseAST{
+public:
+    enum class Kind{Mul,Add};
+    Kind kind;
+    std::unique_ptr<BaseAST> mulexp;
+    std::string op;
+    std::unique_ptr<BaseAST> addexp;
+
+    void Dump() const override{
+        std::cout<<"AddExpAST { ";
+        switch (kind){
+            case Kind::Mul:
+                mulexp->Dump();
+                break;
+            case Kind::Add:
+                addexp->Dump();
+                std::cout<<op;
+                mulexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::Mul:
+                current_val_2=mulexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::Add:
+                current_val_1=addexp->GenerateIR(s);
+                current_val_2=mulexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                switch (op[0]){
+                    case '+':
+                        s+="  "+next_val+" = add "+current_val_1+", "+current_val_2+"\n";
+                        break;
+                    case '-':
+                        s+="  "+next_val+" = sub "+current_val_1+", "+current_val_2+"\n";
+                        break;
+                }
         }
         return next_val;
     }
