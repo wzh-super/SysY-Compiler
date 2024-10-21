@@ -27,12 +27,13 @@ using namespace std;
 }
 
 %token INT RETURN
-%token <str_val> IDENT 
+%token <str_val> IDENT RELOP EQOP ANDOP OROP
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp
+%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
+                EqExp LAndExp LOrExp
 
-%type <str_val> UnaryOp MulOp AddOp
+%type <str_val> UnaryOp MulOp AddOp 
 
 
 %%
@@ -97,6 +98,13 @@ Exp
         auto ast=new ExpAST();
         ast->kind=ExpAST::Kind::Add;
         ast->addexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | LOrExp
+    {
+        auto ast=new ExpAST();
+        ast->kind=ExpAST::Kind::Or;
+        ast->orexp=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;
@@ -228,6 +236,80 @@ AddExp
         ast->mulexp=unique_ptr<BaseAST>($3);
         $$=ast;
     }
+
+RelExp
+    :AddExp
+    {
+        auto ast=new RelExpAST();
+        ast->kind=RelExpAST::Kind::Add;
+        ast->addexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | RelExp RELOP AddExp
+    {
+        auto ast=new RelExpAST();
+        ast->kind=RelExpAST::Kind::Rel;
+        ast->relexp=unique_ptr<BaseAST>($1);
+        ast->op=*unique_ptr<string>($2);
+        ast->addexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
+
+EqExp
+    : RelExp
+    {
+        auto ast=new EqExpAST();
+        ast->kind=EqExpAST::Kind::Rel;
+        ast->relexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | EqExp EQOP RelExp
+    {
+        auto ast=new EqExpAST();
+        ast->kind=EqExpAST::Kind::Eq;
+        ast->eqexp=unique_ptr<BaseAST>($1);
+        ast->op=*unique_ptr<string>($2);
+        ast->relexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
+
+LAndExp
+    : EqExp
+    {
+        auto ast=new LAndExpAST();
+        ast->kind=LAndExpAST::Kind::Eq;
+        ast->eqexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | LAndExp ANDOP EqExp
+    {
+        auto ast=new LAndExpAST();
+        ast->kind=LAndExpAST::Kind::And;
+        ast->landexp=unique_ptr<BaseAST>($1);
+        ast->eqexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
+
+LOrExp
+    : LAndExp
+    {
+        auto ast=new LOrExpAST();
+        ast->kind=LOrExpAST::Kind::And;
+        ast->landexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | LOrExp OROP LAndExp
+    {
+        auto ast=new LOrExpAST();
+        ast->kind=LOrExpAST::Kind::Or;
+        ast->lorexp=unique_ptr<BaseAST>($1);
+        ast->landexp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
 %%
 
 void yyerror(unique_ptr<BaseAST>& ast,const char* s){

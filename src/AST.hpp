@@ -122,10 +122,11 @@ public:
 
 class ExpAST:public BaseAST{
 public:
-    enum class Kind{Unary,Add};
+    enum class Kind{Unary,Add,Or};
     Kind kind;
     std::unique_ptr<BaseAST> unaryexp;
     std::unique_ptr<BaseAST> addexp;
+    std::unique_ptr<BaseAST> orexp;
 
     void Dump() const override{
         std::cout<<"ExpAST { ";
@@ -135,6 +136,9 @@ public:
                 break;
             case Kind::Add:
                 addexp->Dump();
+                break;
+            case Kind::Or:
+                orexp->Dump();
                 break;
         }
         std::cout<<" }";
@@ -148,6 +152,9 @@ public:
                 break;
             case Kind::Add:
                 value=addexp->GenerateIR(s);
+                break;
+            case Kind::Or:
+                value=orexp->GenerateIR(s);
                 break;
         }
         return value;
@@ -334,6 +341,192 @@ public:
                         s+="  "+next_val+" = sub "+current_val_1+", "+current_val_2+"\n";
                         break;
                 }
+        }
+        return next_val;
+    }
+};
+
+class RelExpAST:public BaseAST{
+public:
+    enum class Kind{Add,Rel};
+    Kind kind;
+    std::unique_ptr<BaseAST> addexp;
+    std::string op;
+    std::unique_ptr<BaseAST> relexp;
+
+    void Dump() const override{
+        std::cout<<"RelExpAST { ";
+        switch (kind){
+            case Kind::Add:
+                addexp->Dump();
+                break;
+            case Kind::Rel:
+                relexp->Dump();
+                std::cout<<op;
+                addexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::Add:
+                current_val_2=addexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::Rel:
+                current_val_1=relexp->GenerateIR(s);
+                current_val_2=addexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                if (op=="<"){
+                    s+="  "+next_val+" = lt "+current_val_1+", "+current_val_2+"\n";
+                }
+                else if (op==">"){
+                    s+="  "+next_val+" = gt "+current_val_1+", "+current_val_2+"\n";
+                }
+                else if (op=="<="){
+                    s+="  "+next_val+" = le "+current_val_1+", "+current_val_2+"\n";
+                }
+                else if (op==">="){
+                    s+="  "+next_val+" = gt "+current_val_1+", "+current_val_2+"\n";
+                }
+                break;
+        }
+        return next_val;
+    }
+};
+
+class EqExpAST:public BaseAST{
+public:
+    enum class Kind{Rel,Eq};
+    Kind kind;
+    std::unique_ptr<BaseAST> relexp;
+    std::string op;
+    std::unique_ptr<BaseAST> eqexp;
+
+    void Dump() const override{
+        std::cout<<"EqExpAST { ";
+        switch (kind){
+            case Kind::Rel:
+                relexp->Dump();
+                break;
+            case Kind::Eq:
+                eqexp->Dump();
+                std::cout<<op;
+                relexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s)const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::Rel:
+                current_val_2=relexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::Eq:
+                current_val_1=eqexp->GenerateIR(s);
+                current_val_2=relexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                if (op=="=="){
+                    s+="  "+next_val+" = eq "+current_val_1+", "+current_val_2+"\n";
+                }
+                else if (op=="!="){
+                    s+="  "+next_val+" = ne "+current_val_1+", "+current_val_2+"\n";
+                }
+                break;
+        }
+        return next_val;
+    }
+};
+
+class LAndExpAST:public BaseAST{
+public:
+    enum class Kind{Eq,And};
+    Kind kind;
+    std::unique_ptr<BaseAST> eqexp;
+    std::unique_ptr<BaseAST> landexp;
+
+    void Dump() const override{
+        std::cout<<"LAndExpAST { ";
+        switch (kind){
+            case Kind::Eq:
+                eqexp->Dump();
+                break;
+            case Kind::And:
+                landexp->Dump();
+                std::cout<<"&&";
+                eqexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::Eq:
+                current_val_2=eqexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::And:
+                current_val_1=landexp->GenerateIR(s);
+                current_val_2=eqexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                s+="  "+next_val+" = and "+current_val_1+", "+current_val_2+"\n";
+                break;
+        }
+        return next_val;
+    }
+};
+
+class LOrExpAST:public BaseAST{
+public:
+    enum class Kind{And,Or};
+    Kind kind;
+    std::unique_ptr<BaseAST> landexp;
+    std::unique_ptr<BaseAST> lorexp;
+
+    void Dump() const override{
+        std::cout<<"LOrExpAST { ";
+        switch (kind){
+            case Kind::And:
+                landexp->Dump();
+                break;
+            case Kind::Or:
+                lorexp->Dump();
+                std::cout<<"||";
+                landexp->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        string current_val_1;
+        string current_val_2;
+        string next_val;
+        switch (kind){
+            case Kind::And:
+                current_val_2=landexp->GenerateIR(s);
+                next_val=current_val_2;
+                break;
+            case Kind::Or:
+                current_val_1=lorexp->GenerateIR(s);
+                current_val_2=landexp->GenerateIR(s);
+                next_val="%"+to_string(val_num++);
+                s+="  "+next_val+" = or "+current_val_1+", "+current_val_2+"\n";
+                break;
         }
         return next_val;
     }
