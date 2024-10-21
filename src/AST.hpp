@@ -482,8 +482,12 @@ public:
             case Kind::And:
                 current_val_1=landexp->GenerateIR(s);
                 current_val_2=eqexp->GenerateIR(s);
+                string tmp_val_1="%"+to_string(val_num++);
+                s+="  "+tmp_val_1+" = ne "+current_val_1+", 0\n";
+                string tmp_val_2="%"+to_string(val_num++);
+                s+="  "+tmp_val_2+" = ne "+current_val_2+", 0\n";
                 next_val="%"+to_string(val_num++);
-                s+="  "+next_val+" = and "+current_val_1+", "+current_val_2+"\n";
+                s+="  "+next_val+" = and "+tmp_val_1+", "+tmp_val_2+"\n";
                 break;
         }
         return next_val;
@@ -524,8 +528,10 @@ public:
             case Kind::Or:
                 current_val_1=lorexp->GenerateIR(s);
                 current_val_2=landexp->GenerateIR(s);
+                string tmp_val_1="%"+to_string(val_num++);
+                s+="  "+tmp_val_1+" = or "+current_val_1+", "+current_val_2+"\n";
                 next_val="%"+to_string(val_num++);
-                s+="  "+next_val+" = or "+current_val_1+", "+current_val_2+"\n";
+                s+="  "+next_val+" = ne "+tmp_val_1+", 0\n";
                 break;
         }
         return next_val;
