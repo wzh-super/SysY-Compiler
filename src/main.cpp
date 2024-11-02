@@ -32,13 +32,6 @@ reg_t get_reg(){
       return reg;
     }
   }
-  for (int i=0;i<15;++i){
-    if(reg_states[i]==1){
-      reg_states[i]=0;
-      reg.tag=i;
-      return reg;
-    }
-  }
   assert(false);
 }
 
@@ -215,7 +208,8 @@ reg_t Visit(const koopa_raw_binary_t& binary,string& s){
     default:
       assert(false);
   }
-
+  reg_states[reg1.tag]=0;
+  reg_states[reg2.tag]=0;
   return reg;
 }
 
