@@ -2,10 +2,69 @@
 
 #include <memory>
 #include <string>
-#include<iostream>
+#include <iostream>
+#include <vector>
+#include <map>
+
+#define NOTFIND 0xffffffff
+
 using namespace std;
 
 static int val_num=0;
+
+class SymbolTable{
+public:
+    SymbolTable* parent;
+    map<std::string,int> table;
+    std::vector<SymbolTable*> children;
+    
+    ~SymbolTable(){
+        for (auto& child:children){
+            delete child;
+        }
+    }
+
+    void Insert(std::string& name,int& value){
+        table[name]=value;
+    }
+
+    bool isExist(std::string& name){
+        if (table.find(name)!=table.end())
+            return true;
+        else if(parent!=nullptr)
+            return parent->isExist(name);
+        else
+            return false;
+    }
+
+    int query(std::string& name){
+        if (table.find(name)!=table.end())
+            return table[name];
+        else if (parent!=nullptr)
+            return parent->query(name);
+        else
+            return NOTFIND;
+    }
+
+    SymbolTable* AddChild(){
+        SymbolTable* child=new SymbolTable();
+        child->parent=this;
+        children.push_back(child);
+        return child;
+    }
+
+    void RemoveChild(SymbolTable* child){
+        for (auto it=children.begin();it!=children.end();++it){
+            if (*it==child){
+                children.erase(it);
+                delete child;
+                return;
+            }
+        }
+    }
+};
+
+
 
 class BaseAST {
 public:
@@ -71,17 +130,57 @@ public:
 
 class BlockAST:public BaseAST{
 public:
-    std::unique_ptr<BaseAST> stmt;
+    std::vector<std::unique_ptr<BaseAST>> blockitem;
 
     void Dump() const override{
         std::cout<<"BlockAST { ";
-        stmt->Dump();
+        for (const auto& b_item:blockitem){
+            b_item->Dump();
+            std::cout<<", ";
+        }
         std::cout<<" }";
     }
 
     string GenerateIR(string& s) const override{
+        //TODO
         s+="%entry:\n";
-        stmt->GenerateIR(s);
+        for (const auto& b_item:blockitem){
+            b_item->GenerateIR(s);
+        }
+        return "";
+    }
+};
+
+class BlockItemAST:public BaseAST{
+public:
+    enum class Kind{Decl,Stmt};
+    Kind kind;
+    std::unique_ptr<BaseAST> decl;
+    std::unique_ptr<BaseAST> stmt;
+
+    void Dump() const override{
+        std::cout<<"BlockItemAST { ";
+        switch (kind){
+            case Kind::Decl:
+                decl->Dump();
+                break;
+            case Kind::Stmt:
+                stmt->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        switch (kind){
+            case Kind::Decl:
+                //TODO
+                decl->GenerateIR(s);
+                return "";
+            case Kind::Stmt:
+                stmt->GenerateIR(s);
+                return "";
+        }
         return "";
     }
 };
@@ -163,10 +262,11 @@ public:
 
 class PrimaryExpAST:public BaseAST{
 public:
-    enum class Kind{Number,Exp};
+    enum class Kind{Number,Exp,LVal};
     Kind kind;
     std::unique_ptr<BaseAST> number;
     std::unique_ptr<BaseAST> exp;
+    std::unique_ptr<BaseAST> lval;
 
     void Dump() const override{
         std::cout<<"PrimaryExpAST { ";
@@ -176,6 +276,9 @@ public:
                 break;
             case Kind::Exp:
                 exp->Dump();
+                break;
+            case Kind::LVal:
+                lval->Dump();
                 break;
         }
         std::cout<<" }";
@@ -190,6 +293,9 @@ public:
                 break;
             case Kind::Exp:
                 current_val=exp->GenerateIR(s);
+                break;
+            case Kind::LVal:
+                //TODO
                 break;
         }
         return current_val;
@@ -535,5 +641,111 @@ public:
                 break;
         }
         return next_val;
+    }
+};
+
+class DeclAST:public BaseAST{
+public:
+    std::unique_ptr<BaseAST> constdecl;
+
+    void Dump() const override{
+        std::cout<<"DeclAST { ";
+        constdecl->Dump();
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        constdecl->GenerateIR(s);
+        return "";
+    }
+};
+
+class ConstDeclAST:public BaseAST{
+public:
+    std::string btype;
+    std::vector<std::unique_ptr<BaseAST>> constdef;
+
+    void Dump() const override{
+        std::cout<<"ConstDeclAST { "<<btype;
+        for (const auto& c_def:constdef){
+            c_def->Dump();
+            std::cout<<", ";
+        }
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        for (const auto& c_def:constdef){
+            c_def->GenerateIR(s);
+        }
+        return "";
+    }
+};
+
+class ConstDefAST:public BaseAST{
+public:
+    std::string ident;
+    std::unique_ptr<BaseAST> constinitval;
+
+    void Dump() const override{
+        std::cout<<"ConstDefAST { "<<ident<<", ";
+        constinitval->Dump();
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        constinitval->GenerateIR(s);
+        return "";
+    }
+};
+
+class ConstInitValAST:public BaseAST{
+public:
+    std::unique_ptr<BaseAST> constexp;
+
+    void Dump() const override{
+        std::cout<<"ConstInitValAST { ";
+        constexp->Dump();
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        constexp->GenerateIR(s);
+        return "";
+    }
+};
+
+class LValAST:public BaseAST{
+public:
+    std::string ident;
+
+    void Dump() const override{
+        std::cout<<"LValAST { "<<ident<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        return "";
+    }
+};
+
+class ConstExpAST:public BaseAST{
+public:
+    std::unique_ptr<BaseAST> exp;
+
+    void Dump() const override{
+        std::cout<<"ConstExpAST { ";
+        exp->Dump();
+        std::cout<<" }";
+    }
+
+    string GenerateIR(string& s) const override{
+        //TODO
+        exp->GenerateIR(s);
+        return "";
     }
 };

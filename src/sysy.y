@@ -9,6 +9,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 #include "AST.hpp"
 
 int yylex();
@@ -24,17 +25,19 @@ using namespace std;
     int int_val;
     std::string* str_val;
     BaseAST* ast_val;
+    vector<std::unique_ptr<BaseAST>>* vec_val;
 }
 
-%token INT RETURN
+%token INT RETURN CONST
 %token <str_val> IDENT RELOP EQOP ANDOP OROP
 %token <int_val> INT_CONST
 
-%type <ast_val> FuncDef FuncType Block Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
-                EqExp LAndExp LOrExp
+%type <ast_val> FuncDef FuncType Block BlockItem Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
+                EqExp LAndExp LOrExp Decl ConstDecl ConstDef ConstInitVal LVal ConstExp
 
-%type <str_val> UnaryOp MulOp AddOp 
+%type <str_val> UnaryOp MulOp AddOp BType
 
+%type <vec_val> ConstDefList BlockItemList
 
 %%
 
@@ -67,10 +70,44 @@ FuncType
     ;
 
 Block
-    : '{' Stmt '}'
+    : '{' BlockItemList '}'
     {
         auto ast=new BlockAST();
-        ast->stmt=unique_ptr<BaseAST>($2);
+        vector<unique_ptr<BaseAST>>* vec=$2;
+        ast->blockitem=move(*vec);
+        delete vec;
+        $$=ast;
+    }
+    ;
+
+BlockItemList
+    : BlockItem
+    {
+        auto vec=new vector<unique_ptr<BaseAST>>();
+        vec->push_back(unique_ptr<BaseAST>($1));
+        $$=vec;
+    }
+    | BlockItemList BlockItem
+    {
+        vector<unique_ptr<BaseAST>>* vec=$1;
+        vec->push_back(unique_ptr<BaseAST>($2));
+        $$=vec;
+    }
+    ;
+
+BlockItem
+    : Decl
+    {
+        auto ast=new BlockItemAST();
+        ast->kind=BlockItemAST::Kind::Decl;
+        ast->decl=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | Stmt
+    {
+        auto ast=new BlockItemAST();
+        ast->kind=BlockItemAST::Kind::Stmt;
+        ast->stmt=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;
@@ -140,6 +177,13 @@ PrimaryExp
         auto ast=new PrimaryExpAST();
         ast->kind=PrimaryExpAST::Kind::Number;
         ast->number=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | LVal
+    {
+        auto ast=new PrimaryExpAST();
+        ast->kind=PrimaryExpAST::Kind::LVal;
+        ast->lval=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;
@@ -310,6 +354,88 @@ LOrExp
         $$=ast;
     }
     ;
+
+Decl
+    : ConstDecl
+    {
+        auto ast=new DeclAST();
+        ast->constdecl=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    ;
+
+ConstDefList
+    : ConstDef
+    {
+        auto vec=new vector<unique_ptr<BaseAST>>();
+        vec->push_back(unique_ptr<BaseAST>($1));
+        $$=vec;
+    }
+    | ConstDefList ',' ConstDef
+    {
+        vector<unique_ptr<BaseAST>>* vec=$1;
+        vec->push_back(unique_ptr<BaseAST>($3));
+        $$=vec;
+    }
+    ;
+
+ConstDecl
+    : CONST BType ConstDefList ';'
+    {
+        auto ast=new ConstDeclAST();
+        ast->btype=*unique_ptr<string>($2);
+        vector<std::unique_ptr<BaseAST>>* vec=$3;
+        ast->constdef=move(*vec);
+        delete vec;
+        $$=ast;
+    }
+    ;
+
+BType
+    : INT
+    {
+        std::string* str=new string("int");
+        $$=str;
+    }
+    ;
+
+ConstDef
+    : IDENT '=' ConstInitVal
+    {
+        auto ast=new ConstDefAST();
+        ast->ident=*unique_ptr<string>($1);
+        ast->constinitval=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
+
+ConstInitVal
+    : ConstExp
+    {
+        auto ast=new ConstInitValAST();
+        ast->constexp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    ;
+
+ConstExp
+    : Exp
+    {
+        auto ast=new ConstExpAST();
+        ast->exp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    ;
+
+LVal
+    : IDENT
+    {
+        auto ast=new LValAST();
+        ast->ident=*unique_ptr<string>($1);
+        $$=ast;   
+    }
+    ;
+
 %%
 
 void yyerror(unique_ptr<BaseAST>& ast,const char* s){
