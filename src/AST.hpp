@@ -89,13 +89,11 @@ public:
     }
 
     void set_symbol_table(SymbolTable* table) override{
-        symbol_table=&global_table;
+        symbol_table=table;
         func_def->set_symbol_table(symbol_table->AddChild());
     }
 
     std::string GenerateIR(string& s) const override{
-        // symbol_table=&global_table;
-        // func_def->symbol_table=symbol_table->AddChild();
         func_def->GenerateIR(s);
         return "";
     }
@@ -124,7 +122,6 @@ public:
         s+="fun @"+ident+"(): ";
         functype->GenerateIR(s);
         s+=" {\n";
-        // block->symbol_table=symbol_table;
         block->GenerateIR(s);
         s+="}";
         return "";
@@ -167,10 +164,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
         s+="%entry:\n";
         for (const auto& b_item:blockitem){
-            // b_item->symbol_table=symbol_table;
             b_item->GenerateIR(s);
         }
         return "";
@@ -212,12 +207,9 @@ public:
     string GenerateIR(string& s) const override{
         switch (kind){
             case Kind::Decl:
-                //TODO
-                // decl->symbol_table=symbol_table;
                 decl->GenerateIR(s);
                 return "";
             case Kind::Stmt:
-                // stmt->symbol_table=symbol_table;
                 stmt->GenerateIR(s);
                 return "";
         }
@@ -241,7 +233,6 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        // exp->symbol_table=symbol_table;
         string value=exp->GenerateIR(s);
         s+="  ret ";
         s+=value;
@@ -270,26 +261,11 @@ public:
 
 class ExpAST:public BaseAST{
 public:
-    // enum class Kind{Unary,Add,Or};
-    // Kind kind;
-    // std::unique_ptr<BaseAST> unaryexp;
-    // std::unique_ptr<BaseAST> addexp;
     std::unique_ptr<BaseAST> orexp;
 
     void Dump() const override{
         std::cout<<"ExpAST { ";
         orexp->Dump();
-        // switch (kind){
-        //     case Kind::Unary:
-        //         unaryexp->Dump();
-        //         break;
-        //     case Kind::Add:
-        //         addexp->Dump();
-        //         break;
-        //     case Kind::Or:
-        //         orexp->Dump();
-        //         break;
-        // }
         std::cout<<" }";
     }
 
@@ -305,21 +281,6 @@ public:
     //生成IR时，返回目前变量的名字
     string GenerateIR(string& s) const override{
         string value;
-        // switch (kind){
-        //     case Kind::Unary:
-        //         unaryexp->symbol_table=symbol_table;
-        //         value=unaryexp->GenerateIR(s);
-        //         break;
-        //     case Kind::Add:
-        //         addexp->symbol_table=symbol_table;
-        //         value=addexp->GenerateIR(s);
-        //         break;
-        //     case Kind::Or:
-        //         orexp->symbol_table=symbol_table;
-        //         value=orexp->GenerateIR(s);
-        //         break;
-        // }
-        // orexp->symbol_table=symbol_table;
         value=orexp->GenerateIR(s);
         return value;
     }
@@ -382,11 +343,9 @@ public:
                 current_val=number->GenerateIR(s);
                 break;
             case Kind::Exp:
-                // exp->symbol_table=symbol_table;
                 current_val=exp->GenerateIR(s);
                 break;
             case Kind::LVal:
-                // lval->symbol_table=symbol_table;
                 current_val=lval->GenerateIR(s);
                 break;
         }
@@ -448,12 +407,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Primary:
-                // primaryexp->symbol_table=symbol_table;
                 current_val=primaryexp->GenerateIR(s);
                 next_val=current_val;
                 break;
             case Kind::Unary:
-                // unaryexp->symbol_table=symbol_table;
                 current_val=unaryexp->GenerateIR(s);
                 if (unaryop=="-"){
                     next_val="%"+to_string(val_num++);
@@ -529,13 +486,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Unary:
-                // unaryexp->symbol_table=symbol_table;
                 current_val_2=unaryexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Mult:
-                // mulexp->symbol_table=symbol_table;
-                // unaryexp->symbol_table=symbol_table;
                 current_val_1=mulexp->GenerateIR(s);
                 current_val_2=unaryexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -610,13 +564,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Mul:
-                // mulexp->symbol_table=symbol_table;
                 current_val_2=mulexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Add:
-                // addexp->symbol_table=symbol_table;
-                // mulexp->symbol_table=symbol_table;
                 current_val_1=addexp->GenerateIR(s);
                 current_val_2=mulexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -692,13 +643,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Add:
-                // addexp->symbol_table=symbol_table;
                 current_val_2=addexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Rel:
-                // relexp->symbol_table=symbol_table;
-                // addexp->symbol_table=symbol_table;
                 current_val_1=relexp->GenerateIR(s);
                 current_val_2=addexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -775,13 +723,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Rel:
-                // relexp->symbol_table=symbol_table;
                 current_val_2=relexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Eq:
-                // eqexp->symbol_table=symbol_table;
-                // relexp->symbol_table=symbol_table;
                 current_val_1=eqexp->GenerateIR(s);
                 current_val_2=relexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -848,13 +793,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::Eq:
-                // eqexp->symbol_table=symbol_table;
                 current_val_2=eqexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::And:
-                // landexp->symbol_table=symbol_table;
-                // eqexp->symbol_table=symbol_table;
                 current_val_1=landexp->GenerateIR(s);
                 current_val_2=eqexp->GenerateIR(s);
                 string tmp_val_1="%"+to_string(val_num++);
@@ -920,13 +862,10 @@ public:
         string next_val;
         switch (kind){
             case Kind::And:
-                // landexp->symbol_table=symbol_table;
                 current_val_2=landexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Or:
-                // lorexp->symbol_table=symbol_table;
-                // landexp->symbol_table=symbol_table;
                 current_val_1=lorexp->GenerateIR(s);
                 current_val_2=landexp->GenerateIR(s);
                 string tmp_val_1="%"+to_string(val_num++);
@@ -955,8 +894,6 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
-        // constdecl->symbol_table=symbol_table;
         constdecl->GenerateIR(s);
         return "";
     }
@@ -984,9 +921,7 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
         for (const auto& c_def:constdef){
-            // c_def->symbol_table=symbol_table;
             c_def->GenerateIR(s);
         }
         return "";
@@ -1014,12 +949,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
-        //constinitval->symbol_table=symbol_table;
         symbol_table->Insert(ident,constinitval->compute_exp());
         return "";
-        // constinitval->GenerateIR(s);
-        // return "";
     }
 };
 
@@ -1043,8 +974,6 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
-        // constexp->symbol_table=symbol_table;
         constexp->GenerateIR(s);
         return "";
     }
@@ -1072,7 +1001,6 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
         if(symbol_table->isExist(ident)){
             return to_string(symbol_table->query(ident));
         }
@@ -1103,8 +1031,6 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        //TODO
-        // exp->symbol_table=symbol_table;
         exp->GenerateIR(s);
         return "";
     }

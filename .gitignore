@@ -5,3 +5,4 @@ build/
 *.s
 koopa.h
 out.txt
+Makefile
