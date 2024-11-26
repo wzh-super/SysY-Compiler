@@ -14,6 +14,7 @@
 using namespace std;
 
 static int val_num=0;
+static bool is_return=false;
 
 class SymbolTable{
 public:
@@ -258,10 +259,13 @@ public:
     string GenerateIR(string& s) const override{
         string value=exp->GenerateIR(s);
         switch (kind){
-            case Kind::Return:    
+            case Kind::Return:   
+                if (is_return)
+                    return ""; 
                 s+="  ret ";
                 s+=value;
                 s+='\n';
+                is_return=true;
                 return "";
             case Kind::Assign:
                 string lval_name=get<string>(symbol_table->query(lval->get_ident()));
