@@ -272,8 +272,6 @@ public:
         string value=exp->GenerateIR(s);
         switch (kind){
             case Kind::Return:   
-                if (is_return)
-                    return ""; 
                 s+="  ret ";
                 s+=value;
                 s+='\n';
@@ -1212,7 +1210,7 @@ public:
     string GenerateIR(string& s) const override{
         if (is_return)
             return "";
-        string name="@var"+ident;
+        string name="@"+ident;
         symbol_table->Insert(ident,name);
         s+="  "+name+" = alloc i32\n";
         if (kind==Kind::Init){
