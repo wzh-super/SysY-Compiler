@@ -5,8 +5,10 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <cassert>
 
 #define NOTFIND 0xffffffff
+#define COMPUTEERROR 0xfffffffe
 
 using namespace std;
 
@@ -14,7 +16,7 @@ static int val_num=0;
 
 class SymbolTable{
 public:
-    SymbolTable* parent;
+    SymbolTable* parent=nullptr;
     map<std::string,int> table;
     std::vector<SymbolTable*> children;
     
@@ -24,11 +26,11 @@ public:
         }
     }
 
-    void Insert(std::string& name,int& value){
+    void Insert(const std::string& name,int value){
         table[name]=value;
     }
 
-    bool isExist(std::string& name){
+    bool isExist(const std::string& name){
         if (table.find(name)!=table.end())
             return true;
         else if(parent!=nullptr)
@@ -37,7 +39,7 @@ public:
             return false;
     }
 
-    int query(std::string& name){
+    int query(const std::string& name){
         if (table.find(name)!=table.end())
             return table[name];
         else if (parent!=nullptr)
@@ -64,13 +66,16 @@ public:
     }
 };
 
-
+static SymbolTable global_table;
 
 class BaseAST {
 public:
-    virtual ~BaseAST() = default;
+    mutable SymbolTable* symbol_table;
+    virtual ~BaseAST() {};
     virtual void Dump() const =0;
     virtual std::string GenerateIR(string& s) const=0;
+    virtual int compute_exp() const { return 0; }
+    virtual void set_symbol_table(SymbolTable* table){}
 };
 
 class CompUnitAST:public BaseAST{
@@ -83,7 +88,14 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=&global_table;
+        func_def->set_symbol_table(symbol_table->AddChild());
+    }
+
     std::string GenerateIR(string& s) const override{
+        // symbol_table=&global_table;
+        // func_def->symbol_table=symbol_table->AddChild();
         func_def->GenerateIR(s);
         return "";
     }
@@ -103,10 +115,16 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        block->set_symbol_table(symbol_table);
+    }
+
     std::string GenerateIR(string& s) const override{
         s+="fun @"+ident+"(): ";
         functype->GenerateIR(s);
         s+=" {\n";
+        // block->symbol_table=symbol_table;
         block->GenerateIR(s);
         s+="}";
         return "";
@@ -141,10 +159,18 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        for (const auto& b_item:blockitem){
+            b_item->set_symbol_table(symbol_table);
+        }
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
         s+="%entry:\n";
         for (const auto& b_item:blockitem){
+            // b_item->symbol_table=symbol_table;
             b_item->GenerateIR(s);
         }
         return "";
@@ -171,13 +197,27 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Decl:
+                decl->set_symbol_table(symbol_table);
+                break;
+            case Kind::Stmt:
+                stmt->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
     string GenerateIR(string& s) const override{
         switch (kind){
             case Kind::Decl:
                 //TODO
+                // decl->symbol_table=symbol_table;
                 decl->GenerateIR(s);
                 return "";
             case Kind::Stmt:
+                // stmt->symbol_table=symbol_table;
                 stmt->GenerateIR(s);
                 return "";
         }
@@ -195,8 +235,13 @@ public:
         std::cout<<"StmtAST { "<<number<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        exp->set_symbol_table(symbol_table);
+    }
+
     string GenerateIR(string& s) const override{
-        
+        // exp->symbol_table=symbol_table;
         string value=exp->GenerateIR(s);
         s+="  ret ";
         s+=value;
@@ -213,6 +258,10 @@ public:
         std::cout<<int_const;
     }
 
+    int compute_exp() const override{
+        return int_const;
+    }
+
     string GenerateIR(string& s) const override{
         
         return to_string(int_const);
@@ -221,41 +270,57 @@ public:
 
 class ExpAST:public BaseAST{
 public:
-    enum class Kind{Unary,Add,Or};
-    Kind kind;
-    std::unique_ptr<BaseAST> unaryexp;
-    std::unique_ptr<BaseAST> addexp;
+    // enum class Kind{Unary,Add,Or};
+    // Kind kind;
+    // std::unique_ptr<BaseAST> unaryexp;
+    // std::unique_ptr<BaseAST> addexp;
     std::unique_ptr<BaseAST> orexp;
 
     void Dump() const override{
         std::cout<<"ExpAST { ";
-        switch (kind){
-            case Kind::Unary:
-                unaryexp->Dump();
-                break;
-            case Kind::Add:
-                addexp->Dump();
-                break;
-            case Kind::Or:
-                orexp->Dump();
-                break;
-        }
+        orexp->Dump();
+        // switch (kind){
+        //     case Kind::Unary:
+        //         unaryexp->Dump();
+        //         break;
+        //     case Kind::Add:
+        //         addexp->Dump();
+        //         break;
+        //     case Kind::Or:
+        //         orexp->Dump();
+        //         break;
+        // }
         std::cout<<" }";
     }
+
+    int compute_exp() const override{
+        return orexp->compute_exp();
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        orexp->set_symbol_table(symbol_table);
+    }
+
     //生成IR时，返回目前变量的名字
     string GenerateIR(string& s) const override{
         string value;
-        switch (kind){
-            case Kind::Unary:
-                value=unaryexp->GenerateIR(s);
-                break;
-            case Kind::Add:
-                value=addexp->GenerateIR(s);
-                break;
-            case Kind::Or:
-                value=orexp->GenerateIR(s);
-                break;
-        }
+        // switch (kind){
+        //     case Kind::Unary:
+        //         unaryexp->symbol_table=symbol_table;
+        //         value=unaryexp->GenerateIR(s);
+        //         break;
+        //     case Kind::Add:
+        //         addexp->symbol_table=symbol_table;
+        //         value=addexp->GenerateIR(s);
+        //         break;
+        //     case Kind::Or:
+        //         orexp->symbol_table=symbol_table;
+        //         value=orexp->GenerateIR(s);
+        //         break;
+        // }
+        // orexp->symbol_table=symbol_table;
+        value=orexp->GenerateIR(s);
         return value;
     }
 };
@@ -284,6 +349,31 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Exp:
+                exp->set_symbol_table(symbol_table);
+                break;
+            case Kind::LVal:
+                lval->set_symbol_table(symbol_table);
+                break;
+            default:
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Number:
+                return number->compute_exp();
+            case Kind::Exp:
+                return exp->compute_exp();
+            case Kind::LVal:
+                return lval->compute_exp();
+        }
+    }
+
     string GenerateIR(string& s) const override{
         string current_val;
         string next_val;
@@ -292,10 +382,12 @@ public:
                 current_val=number->GenerateIR(s);
                 break;
             case Kind::Exp:
+                // exp->symbol_table=symbol_table;
                 current_val=exp->GenerateIR(s);
                 break;
             case Kind::LVal:
-                //TODO
+                // lval->symbol_table=symbol_table;
+                current_val=lval->GenerateIR(s);
                 break;
         }
         return current_val;
@@ -324,15 +416,44 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Primary:
+                primaryexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Unary:
+                unaryexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Primary:
+                return primaryexp->compute_exp();
+            case Kind::Unary:
+                if (unaryop=="-")
+                    return -unaryexp->compute_exp();
+                else if (unaryop=="!")
+                    return !unaryexp->compute_exp();
+                else if (unaryop=="+")
+                    return unaryexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val;
         string next_val;
         switch (kind){
             case Kind::Primary:
+                // primaryexp->symbol_table=symbol_table;
                 current_val=primaryexp->GenerateIR(s);
                 next_val=current_val;
                 break;
             case Kind::Unary:
+                // unaryexp->symbol_table=symbol_table;
                 current_val=unaryexp->GenerateIR(s);
                 if (unaryop=="-"){
                     next_val="%"+to_string(val_num++);
@@ -374,16 +495,47 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Unary:
+                unaryexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Mult:
+                mulexp->set_symbol_table(symbol_table);
+                unaryexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Unary:
+                return unaryexp->compute_exp();
+            case Kind::Mult:
+                if (op=="*")
+                    return mulexp->compute_exp()*unaryexp->compute_exp();
+                else if (op=="/")
+                    return mulexp->compute_exp()/unaryexp->compute_exp();
+                else if (op=="%")
+                    return mulexp->compute_exp()%unaryexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::Unary:
+                // unaryexp->symbol_table=symbol_table;
                 current_val_2=unaryexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Mult:
+                // mulexp->symbol_table=symbol_table;
+                // unaryexp->symbol_table=symbol_table;
                 current_val_1=mulexp->GenerateIR(s);
                 current_val_2=unaryexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -426,16 +578,45 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Mul:
+                mulexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Add:
+                addexp->set_symbol_table(symbol_table);
+                mulexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Mul:
+                return mulexp->compute_exp();
+            case Kind::Add:
+                if (op=="+")
+                    return addexp->compute_exp()+mulexp->compute_exp();
+                else if (op=="-")
+                    return addexp->compute_exp()-mulexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::Mul:
+                // mulexp->symbol_table=symbol_table;
                 current_val_2=mulexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Add:
+                // addexp->symbol_table=symbol_table;
+                // mulexp->symbol_table=symbol_table;
                 current_val_1=addexp->GenerateIR(s);
                 current_val_2=mulexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -475,16 +656,49 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Add:
+                addexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Rel:
+                relexp->set_symbol_table(symbol_table);
+                addexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Add:
+                return addexp->compute_exp();
+            case Kind::Rel:
+                if (op=="<")
+                    return relexp->compute_exp()<addexp->compute_exp();
+                else if (op==">")
+                    return relexp->compute_exp()>addexp->compute_exp();
+                else if (op=="<=")
+                    return relexp->compute_exp()<=addexp->compute_exp();
+                else if (op==">=")
+                    return relexp->compute_exp()>=addexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::Add:
+                // addexp->symbol_table=symbol_table;
                 current_val_2=addexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Rel:
+                // relexp->symbol_table=symbol_table;
+                // addexp->symbol_table=symbol_table;
                 current_val_1=relexp->GenerateIR(s);
                 current_val_2=addexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -529,16 +743,45 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Rel:
+                relexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Eq:
+                eqexp->set_symbol_table(symbol_table);
+                relexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Rel:
+                return relexp->compute_exp();
+            case Kind::Eq:
+                if (op=="==")
+                    return eqexp->compute_exp()==relexp->compute_exp();
+                else if (op=="!=")
+                    return eqexp->compute_exp()!=relexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s)const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::Rel:
+                // relexp->symbol_table=symbol_table;
                 current_val_2=relexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Eq:
+                // eqexp->symbol_table=symbol_table;
+                // relexp->symbol_table=symbol_table;
                 current_val_1=eqexp->GenerateIR(s);
                 current_val_2=relexp->GenerateIR(s);
                 next_val="%"+to_string(val_num++);
@@ -576,16 +819,42 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Eq:
+                eqexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::And:
+                landexp->set_symbol_table(symbol_table);
+                eqexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::Eq:
+                return eqexp->compute_exp();
+            case Kind::And:
+                return landexp->compute_exp()&&eqexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::Eq:
+                // eqexp->symbol_table=symbol_table;
                 current_val_2=eqexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::And:
+                // landexp->symbol_table=symbol_table;
+                // eqexp->symbol_table=symbol_table;
                 current_val_1=landexp->GenerateIR(s);
                 current_val_2=eqexp->GenerateIR(s);
                 string tmp_val_1="%"+to_string(val_num++);
@@ -622,16 +891,42 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::And:
+                landexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Or:
+                lorexp->set_symbol_table(symbol_table);
+                landexp->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    int compute_exp() const override{
+        switch(kind){
+            case Kind::And:
+                return landexp->compute_exp();
+            case Kind::Or:
+                return lorexp->compute_exp()||landexp->compute_exp();
+        }
+        assert(false);
+    }
+
     string GenerateIR(string& s) const override{
         string current_val_1;
         string current_val_2;
         string next_val;
         switch (kind){
             case Kind::And:
+                // landexp->symbol_table=symbol_table;
                 current_val_2=landexp->GenerateIR(s);
                 next_val=current_val_2;
                 break;
             case Kind::Or:
+                // lorexp->symbol_table=symbol_table;
+                // landexp->symbol_table=symbol_table;
                 current_val_1=lorexp->GenerateIR(s);
                 current_val_2=landexp->GenerateIR(s);
                 string tmp_val_1="%"+to_string(val_num++);
@@ -654,8 +949,14 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        constdecl->set_symbol_table(symbol_table);
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
+        // constdecl->symbol_table=symbol_table;
         constdecl->GenerateIR(s);
         return "";
     }
@@ -675,9 +976,17 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        for (const auto& c_def:constdef){
+            c_def->set_symbol_table(symbol_table);
+        }
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
         for (const auto& c_def:constdef){
+            // c_def->symbol_table=symbol_table;
             c_def->GenerateIR(s);
         }
         return "";
@@ -695,10 +1004,22 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        constinitval->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return constinitval->compute_exp();
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
-        constinitval->GenerateIR(s);
+        //constinitval->symbol_table=symbol_table;
+        symbol_table->Insert(ident,constinitval->compute_exp());
         return "";
+        // constinitval->GenerateIR(s);
+        // return "";
     }
 };
 
@@ -712,8 +1033,18 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        constexp->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return constexp->compute_exp();
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
+        // constexp->symbol_table=symbol_table;
         constexp->GenerateIR(s);
         return "";
     }
@@ -727,8 +1058,27 @@ public:
         std::cout<<"LValAST { "<<ident<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+    }
+
+    int compute_exp() const override{
+        if(symbol_table->isExist(ident)){
+            return symbol_table->query(ident);
+        }
+        else{
+            assert(false);
+        }
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
+        if(symbol_table->isExist(ident)){
+            return to_string(symbol_table->query(ident));
+        }
+        else{
+            assert(false);
+        }
         return "";
     }
 };
@@ -743,8 +1093,18 @@ public:
         std::cout<<" }";
     }
 
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        exp->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return exp->compute_exp();
+    }
+
     string GenerateIR(string& s) const override{
         //TODO
+        // exp->symbol_table=symbol_table;
         exp->GenerateIR(s);
         return "";
     }

@@ -228,6 +228,7 @@ int main(int argc, const char *argv[]) {
   assert(!ret);
 
   string koopaIR;
+  ast->set_symbol_table(&global_table);
   ast->GenerateIR(koopaIR);
 
   if(strcmp(mode,"-koopa")==0){

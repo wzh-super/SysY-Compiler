@@ -123,24 +123,9 @@ Stmt
     ;
 
 Exp
-    : UnaryExp
+    : LOrExp
     {
         auto ast=new ExpAST();
-        ast->kind=ExpAST::Kind::Unary;
-        ast->unaryexp=unique_ptr<BaseAST>($1);
-        $$=ast;
-    }
-    | AddExp
-    {
-        auto ast=new ExpAST();
-        ast->kind=ExpAST::Kind::Add;
-        ast->addexp=unique_ptr<BaseAST>($1);
-        $$=ast;
-    }
-    | LOrExp
-    {
-        auto ast=new ExpAST();
-        ast->kind=ExpAST::Kind::Or;
         ast->orexp=unique_ptr<BaseAST>($1);
         $$=ast;
     }
