@@ -33,11 +33,11 @@ using namespace std;
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block BlockItem Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
-                EqExp LAndExp LOrExp Decl ConstDecl ConstDef ConstInitVal LVal ConstExp
+                EqExp LAndExp LOrExp Decl ConstDecl ConstDef ConstInitVal LVal ConstExp VarDecl VarDef Initval
 
 %type <str_val> UnaryOp MulOp AddOp BType
 
-%type <vec_val> ConstDefList BlockItemList
+%type <vec_val> ConstDefList BlockItemList VarDefList
 
 %%
 
@@ -116,8 +116,17 @@ Stmt
     : RETURN Exp ';'
     {
         auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Return;
         ast->ret="ret";
         ast->exp=unique_ptr<BaseAST>($2);
+        $$=ast;
+    }
+    | LVal '=' Exp ';'
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Assign;
+        ast->lval=unique_ptr<BaseAST>($1);
+        ast->exp=unique_ptr<BaseAST>($3);
         $$=ast;
     }
     ;
@@ -344,7 +353,15 @@ Decl
     : ConstDecl
     {
         auto ast=new DeclAST();
+        ast->kind=DeclAST::Kind::Const;
         ast->constdecl=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | VarDecl
+    {
+        auto ast=new DeclAST();
+        ast->kind=DeclAST::Kind::Var;
+        ast->vardecl=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;
@@ -418,6 +435,60 @@ LVal
         auto ast=new LValAST();
         ast->ident=*unique_ptr<string>($1);
         $$=ast;   
+    }
+    ;
+
+VarDefList
+    : VarDef
+    {
+        auto vec=new vector<unique_ptr<BaseAST>>();
+        vec->push_back(unique_ptr<BaseAST>($1));
+        $$=vec;
+    }
+    | VarDefList ',' VarDef
+    {
+        vector<unique_ptr<BaseAST>>* vec=$1;
+        vec->push_back(unique_ptr<BaseAST>($3));
+        $$=vec;
+    }
+    ;
+
+VarDef
+    : IDENT
+    {
+        auto ast=new VarDefAST();
+        ast->kind=VarDefAST::Kind::Ident;
+        ast->ident=*unique_ptr<string>($1);
+        $$=ast;
+    }
+    | IDENT '=' Initval
+    {
+        auto ast=new VarDefAST();
+        ast->kind=VarDefAST::Kind::Init;
+        ast->ident=*unique_ptr<string>($1);
+        ast->initval=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    ;
+
+Initval
+    : Exp
+    {
+        auto ast=new InitValAST();
+        ast->exp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    ;
+
+VarDecl
+    : BType VarDefList ';'
+    {
+        auto ast=new VarDeclAST();
+        ast->btype=*unique_ptr<string>($1);
+        vector<unique_ptr<BaseAST>>* vec=$2;
+        ast->vardef=move(*vec);
+        delete vec;
+        $$=ast;
     }
     ;
 

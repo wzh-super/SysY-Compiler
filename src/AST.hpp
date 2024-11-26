@@ -6,6 +6,7 @@
 #include <vector>
 #include <map>
 #include <cassert>
+#include <variant>
 
 #define NOTFIND 0xffffffff
 #define COMPUTEERROR 0xfffffffe
@@ -17,7 +18,7 @@ static int val_num=0;
 class SymbolTable{
 public:
     SymbolTable* parent=nullptr;
-    map<std::string,int> table;
+    map<std::string,std::variant<int,std::string>> table;
     std::vector<SymbolTable*> children;
     
     ~SymbolTable(){
@@ -26,7 +27,7 @@ public:
         }
     }
 
-    void Insert(const std::string& name,int value){
+    void Insert(const std::string& name,variant<int,string> value){
         table[name]=value;
     }
 
@@ -39,7 +40,7 @@ public:
             return false;
     }
 
-    int query(const std::string& name){
+    variant<int,string> query(const std::string& name){
         if (table.find(name)!=table.end())
             return table[name];
         else if (parent!=nullptr)
@@ -76,6 +77,7 @@ public:
     virtual std::string GenerateIR(string& s) const=0;
     virtual int compute_exp() const { return 0; }
     virtual void set_symbol_table(SymbolTable* table){}
+    virtual string get_ident() const { return ""; }
 };
 
 class CompUnitAST:public BaseAST{
@@ -219,25 +221,58 @@ public:
 
 class StmtAST:public BaseAST{
 public:
+    enum class Kind{Return,Assign};
+    Kind kind;
     std::string ret;
     std::unique_ptr<BaseAST> exp;
-    int number;
+    std::unique_ptr<BaseAST> lval;
 
     void Dump() const override{
-        std::cout<<"StmtAST { "<<number<<" }";
+        std::cout<<"StmtAST { ";
+        switch (kind){
+            case Kind::Return:
+                std::cout<<"return ";
+                exp->Dump();
+                break;
+            case Kind::Assign:
+                lval->Dump();
+                std::cout<<"=";
+                exp->Dump();
+                break;
+        }
     }
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        exp->set_symbol_table(symbol_table);
+        switch (kind){
+            case Kind::Return:
+                exp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Assign:
+                lval->set_symbol_table(symbol_table);
+                exp->set_symbol_table(symbol_table);
+                break;
+        }
     }
 
     string GenerateIR(string& s) const override{
         string value=exp->GenerateIR(s);
-        s+="  ret ";
-        s+=value;
-        s+='\n';
-        return "";
+        switch (kind){
+            case Kind::Return:    
+                s+="  ret ";
+                s+=value;
+                s+='\n';
+                return "";
+            case Kind::Assign:
+                string lval_name=get<string>(symbol_table->query(lval->get_ident()));
+                s+="  store "+value+", "+lval_name+'\n';
+                return "";
+        }
+        // string value=exp->GenerateIR(s);
+        // s+="  ret ";
+        // s+=value;
+        // s+='\n';
+        // return "";
     }
 };
 
@@ -880,21 +915,45 @@ public:
 
 class DeclAST:public BaseAST{
 public:
+    enum class Kind{Const,Var};
+    Kind kind;
     std::unique_ptr<BaseAST> constdecl;
+    std::unique_ptr<BaseAST> vardecl;
 
     void Dump() const override{
         std::cout<<"DeclAST { ";
-        constdecl->Dump();
+        switch (kind){
+            case Kind::Const:
+                constdecl->Dump();
+                break;
+            case Kind::Var:
+                vardecl->Dump();
+                break;
+        }
         std::cout<<" }";
     }
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        constdecl->set_symbol_table(symbol_table);
+        switch (kind){
+            case Kind::Const:
+                constdecl->set_symbol_table(symbol_table);
+                break;
+            case Kind::Var:
+                vardecl->set_symbol_table(symbol_table);
+                break;
+        }
     }
 
     string GenerateIR(string& s) const override{
-        constdecl->GenerateIR(s);
+        switch (kind){
+            case Kind::Const:
+                constdecl->GenerateIR(s);
+                break;
+            case Kind::Var:
+                vardecl->GenerateIR(s);
+                break;
+        }
         return "";
     }
 };
@@ -991,9 +1050,13 @@ public:
         symbol_table=table;
     }
 
+    string get_ident() const override{
+        return ident;
+    }
+
     int compute_exp() const override{
         if(symbol_table->isExist(ident)){
-            return symbol_table->query(ident);
+            return get<int>(symbol_table->query(ident));
         }
         else{
             assert(false);
@@ -1002,12 +1065,17 @@ public:
 
     string GenerateIR(string& s) const override{
         if(symbol_table->isExist(ident)){
-            return to_string(symbol_table->query(ident));
+            variant<int,string> value=symbol_table->query(ident);
+            if (std::holds_alternative<int>(value)){
+                return to_string(get<int>(value));
+            }
+            else if (std::holds_alternative<string>(value)){
+                string current_val="%"+to_string(val_num++);
+                s+="  "+current_val+" = load "+get<string>(value)+'\n';
+                return current_val;
+            }
         }
-        else{
-            assert(false);
-        }
-        return "";
+       assert(false);
     }
 };
 
@@ -1033,5 +1101,93 @@ public:
     string GenerateIR(string& s) const override{
         exp->GenerateIR(s);
         return "";
+    }
+};
+
+class VarDeclAST:public BaseAST{
+public:
+    std::string btype;
+    std::vector<std::unique_ptr<BaseAST>> vardef;
+
+    void Dump() const override{
+        std::cout<<"VarDeclAST { "<<btype;
+        for (const auto& v_def:vardef){
+            v_def->Dump();
+            std::cout<<", ";
+        }
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        for (const auto& v_def:vardef){
+            v_def->set_symbol_table(symbol_table);
+        }
+    }
+
+    string GenerateIR(string& s) const override{
+        for (const auto& v_def:vardef){
+            v_def->GenerateIR(s);
+        }
+        return "";
+    }
+};
+
+class VarDefAST:public BaseAST{
+public:
+    enum class Kind{Ident,Init};
+    Kind kind;
+    std::string ident;
+    std::unique_ptr<BaseAST> initval;
+
+    void Dump() const override{
+        std::cout<<"VarDefAST { ";
+        switch (kind){
+            case Kind::Ident:
+                std::cout<<ident;
+                break;
+            case Kind::Init:
+                std::cout<<ident<<", ";
+                initval->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        if (kind==Kind::Init)
+            initval->set_symbol_table(symbol_table);
+    }
+
+    string GenerateIR(string& s) const override{
+        string name="@"+ident;
+        symbol_table->Insert(ident,name);
+        s+="  "+name+" = alloc i32\n";
+        if (kind==Kind::Init){
+            string value=initval->GenerateIR(s);
+            s+="  store "+value+", "+name+'\n';
+        }
+        return "";
+    }
+};
+
+class InitValAST:public BaseAST{
+public:
+    std::unique_ptr<BaseAST> exp;
+
+    void Dump() const override{
+        std::cout<<"InitValAST { ";
+        exp->Dump();
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        exp->set_symbol_table(symbol_table);
+    }
+
+    string GenerateIR(string& s) const override{
+        return exp->GenerateIR(s);;
     }
 };
