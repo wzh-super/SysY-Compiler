@@ -1212,7 +1212,7 @@ public:
     string GenerateIR(string& s) const override{
         if (is_return)
             return "";
-        string name="@"+ident;
+        string name="@@"+ident;
         symbol_table->Insert(ident,name);
         s+="  "+name+" = alloc i32\n";
         if (kind==Kind::Init){
