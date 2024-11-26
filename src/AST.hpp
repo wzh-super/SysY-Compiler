@@ -97,6 +97,8 @@ public:
     }
 
     std::string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         func_def->GenerateIR(s);
         return "";
     }
@@ -122,6 +124,8 @@ public:
     }
 
     std::string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         s+="fun @"+ident+"(): ";
         functype->GenerateIR(s);
         s+=" {\n";
@@ -140,6 +144,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         if (type=="int")
             s+="i32";
         return "";
@@ -167,6 +173,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         s+="%entry:\n";
         for (const auto& b_item:blockitem){
             b_item->GenerateIR(s);
@@ -208,6 +216,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         switch (kind){
             case Kind::Decl:
                 decl->GenerateIR(s);
@@ -257,6 +267,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string value=exp->GenerateIR(s);
         switch (kind){
             case Kind::Return:   
@@ -293,7 +305,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        
+        if (is_return)
+            return "";
         return to_string(int_const);
     }
 };
@@ -319,6 +332,8 @@ public:
 
     //生成IR时，返回目前变量的名字
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string value;
         value=orexp->GenerateIR(s);
         return value;
@@ -375,6 +390,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val;
         string next_val;
         switch (kind){
@@ -442,6 +459,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val;
         string next_val;
         switch (kind){
@@ -520,6 +539,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -598,6 +619,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -677,6 +700,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -757,6 +782,8 @@ public:
     }
 
     string GenerateIR(string& s)const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -827,6 +854,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -896,6 +925,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -950,6 +981,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         switch (kind){
             case Kind::Const:
                 constdecl->GenerateIR(s);
@@ -984,6 +1017,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         for (const auto& c_def:constdef){
             c_def->GenerateIR(s);
         }
@@ -1012,6 +1047,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         symbol_table->Insert(ident,constinitval->compute_exp());
         return "";
     }
@@ -1037,6 +1074,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         constexp->GenerateIR(s);
         return "";
     }
@@ -1068,6 +1107,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         if(symbol_table->isExist(ident)){
             variant<int,string> value=symbol_table->query(ident);
             if (std::holds_alternative<int>(value)){
@@ -1103,6 +1144,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         exp->GenerateIR(s);
         return "";
     }
@@ -1130,6 +1173,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         for (const auto& v_def:vardef){
             v_def->GenerateIR(s);
         }
@@ -1165,6 +1210,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         string name="@"+ident;
         symbol_table->Insert(ident,name);
         s+="  "+name+" = alloc i32\n";
@@ -1192,6 +1239,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if (is_return)
+            return "";
         return exp->GenerateIR(s);;
     }
 };
