@@ -20,6 +20,7 @@ class SymbolTable{
 public:
     SymbolTable* parent=nullptr;
     map<std::string,std::variant<int,std::string>> table;
+    map<std::string,int> var_table;
     std::vector<SymbolTable*> children;
     
     ~SymbolTable(){
@@ -280,6 +281,7 @@ public:
             case Kind::Assign:
                 string lval_name=get<string>(symbol_table->query(lval->get_ident()));
                 s+="  store "+value+", "+lval_name+'\n';
+                symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
                 return "";
         }
         // string value=exp->GenerateIR(s);
@@ -1097,11 +1099,15 @@ public:
 
     int compute_exp() const override{
         if(symbol_table->isExist(ident)){
-            return get<int>(symbol_table->query(ident));
+            std::variant<int,string> value=symbol_table->query(ident);
+            if(std::holds_alternative<int>(value)){
+                return get<int>(value);
+            }
+            else if(std::holds_alternative<string>(value)){
+                return symbol_table->var_table[ident];
+            }
         }
-        else{
-            assert(false);
-        }
+        assert(false);
     }
 
     string GenerateIR(string& s) const override{
@@ -1201,6 +1207,18 @@ public:
         std::cout<<" }";
     }
 
+    int compute_exp() const override{
+        int value=0;
+        if (kind==Kind::Init){
+            value=initval->compute_exp();
+            symbol_table->var_table[ident]=value;
+            return value;
+        }
+        else{
+            assert(false);
+        }
+    }
+
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
         if (kind==Kind::Init)
@@ -1214,6 +1232,7 @@ public:
         symbol_table->Insert(ident,name);
         s+="  "+name+" = alloc i32\n";
         if (kind==Kind::Init){
+            symbol_table->var_table[ident]=initval->compute_exp();
             string value=initval->GenerateIR(s);
             s+="  store "+value+", "+name+'\n';
         }
@@ -1234,6 +1253,10 @@ public:
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
         exp->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return exp->compute_exp();
     }
 
     string GenerateIR(string& s) const override{
