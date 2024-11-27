@@ -8,9 +8,6 @@
 #include <cassert>
 #include <variant>
 
-#define NOTFIND 0xffffffff
-#define COMPUTEERROR 0xfffffffe
-
 using namespace std;
 
 static int val_num=0;
@@ -48,7 +45,7 @@ public:
         else if (parent!=nullptr)
             return parent->query(name);
         else
-            return NOTFIND;
+            assert(false);
     }
 
     SymbolTable* AddChild(){
@@ -724,7 +721,7 @@ public:
                     s+="  "+next_val+" = le "+current_val_1+", "+current_val_2+"\n";
                 }
                 else if (op==">="){
-                    s+="  "+next_val+" = gt "+current_val_1+", "+current_val_2+"\n";
+                    s+="  "+next_val+" = ge "+current_val_1+", "+current_val_2+"\n";
                 }
                 break;
         }
