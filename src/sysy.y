@@ -81,10 +81,10 @@ Block
     ;
 
 BlockItemList
-    : BlockItem
+    : 
     {
         auto vec=new vector<unique_ptr<BaseAST>>();
-        vec->push_back(unique_ptr<BaseAST>($1));
+        
         $$=vec;
     }
     | BlockItemList BlockItem
@@ -127,6 +127,35 @@ Stmt
         ast->kind=StmtAST::Kind::Assign;
         ast->lval=unique_ptr<BaseAST>($1);
         ast->exp=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    | RETURN ';'
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Return;
+        ast->ret="ret";
+        ast->exp=nullptr;
+        $$=ast;
+    }
+    | Exp ';'
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Exp;
+        ast->exp=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | ';'
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Exp;
+        ast->exp=nullptr;
+        $$=ast;
+    }
+    | Block
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Block;
+        ast->block=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     ;

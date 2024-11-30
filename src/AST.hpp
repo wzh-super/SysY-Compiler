@@ -67,6 +67,7 @@ public:
 };
 
 static SymbolTable global_table;
+static map<string,int> var_count;
 
 class BaseAST {
 public:
@@ -118,7 +119,7 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        block->set_symbol_table(symbol_table);
+        block->set_symbol_table(symbol_table->AddChild());
     }
 
     std::string GenerateIR(string& s) const override{
@@ -127,8 +128,10 @@ public:
         s+="fun @"+ident+"(): ";
         functype->GenerateIR(s);
         s+=" {\n";
+        s+="%entry:\n";
         block->GenerateIR(s);
         s+="}";
+        symbol_table->RemoveChild(block->symbol_table);
         return "";
     }
 };
@@ -173,7 +176,7 @@ public:
     string GenerateIR(string& s) const override{
         if (is_return)
             return "";
-        s+="%entry:\n";
+
         for (const auto& b_item:blockitem){
             b_item->GenerateIR(s);
         }
@@ -230,23 +233,32 @@ public:
 
 class StmtAST:public BaseAST{
 public:
-    enum class Kind{Return,Assign};
+    enum class Kind{Return,Assign,Exp,Block};
     Kind kind;
     std::string ret;
     std::unique_ptr<BaseAST> exp;
     std::unique_ptr<BaseAST> lval;
+    std::unique_ptr<BaseAST> block;
 
     void Dump() const override{
         std::cout<<"StmtAST { ";
         switch (kind){
             case Kind::Return:
                 std::cout<<"return ";
-                exp->Dump();
+                if(exp!=nullptr)
+                    exp->Dump();
                 break;
             case Kind::Assign:
                 lval->Dump();
                 std::cout<<"=";
                 exp->Dump();
+                break;
+            case Kind::Exp:
+                if(exp!=nullptr)
+                    exp->Dump();
+                break;
+            case Kind::Block:
+                block->Dump();
                 break;
         }
     }
@@ -255,11 +267,19 @@ public:
         symbol_table=table;
         switch (kind){
             case Kind::Return:
-                exp->set_symbol_table(symbol_table);
+                if(exp!=nullptr)
+                    exp->set_symbol_table(symbol_table);
                 break;
             case Kind::Assign:
                 lval->set_symbol_table(symbol_table);
                 exp->set_symbol_table(symbol_table);
+                break;
+            case Kind::Block:
+                block->set_symbol_table(symbol_table->AddChild());
+                break;
+            case Kind::Exp:
+                if(exp!=nullptr)
+                    exp->set_symbol_table(symbol_table);
                 break;
         }
     }
@@ -267,18 +287,30 @@ public:
     string GenerateIR(string& s) const override{
         if (is_return)
             return "";
-        string value=exp->GenerateIR(s);
+        string value;
+        string lval_name;
+        if(exp!=nullptr)
+            value=exp->GenerateIR(s);
         switch (kind){
             case Kind::Return:   
                 s+="  ret ";
-                s+=value;
+                if(exp!=nullptr)
+                    s+=value;
                 s+='\n';
                 is_return=true;
                 return "";
             case Kind::Assign:
-                string lval_name=get<string>(symbol_table->query(lval->get_ident()));
+                lval_name=get<string>(symbol_table->query(lval->get_ident()));
                 s+="  store "+value+", "+lval_name+'\n';
                 symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
+                return "";
+            case Kind::Block:
+                block->GenerateIR(s);
+                symbol_table->RemoveChild(block->symbol_table);
+                return "";
+            case Kind::Exp:
+                return value;
+            default:
                 return "";
         }
         // string value=exp->GenerateIR(s);
@@ -1226,6 +1258,14 @@ public:
         if (is_return)
             return "";
         string name="@"+ident;
+        if(var_count.find(ident)==var_count.end()){
+            var_count[ident]=1;
+            name+="_"+to_string(var_count[ident]);
+        }
+        else{
+            var_count[ident]++;
+            name+="_"+to_string(var_count[ident]);
+        }
         symbol_table->Insert(ident,name);
         s+="  "+name+" = alloc i32\n";
         if (kind==Kind::Init){
