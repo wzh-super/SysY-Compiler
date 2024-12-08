@@ -60,12 +60,15 @@ public:
     }
 
     void set_val(const std::string& name,int value){
-        if (var_table.find(name)!=var_table.end())
+        if(table.find(name)!=table.end()){
             var_table[name]=value;
-        else if (parent!=nullptr)
+        }
+        else if(parent!=nullptr){
             parent->set_val(name,value);
-        else
+        }
+        else{
             assert(false);
+        }
     }
 
     SymbolTable* AddChild(){
