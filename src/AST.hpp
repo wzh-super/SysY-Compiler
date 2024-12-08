@@ -13,6 +13,7 @@ using namespace std;
 static int val_num=0;
 static int ifelse_num=0;
 static bool is_return=false;
+static int entry_num=1;
 
 class SymbolTable{
 public:
@@ -218,8 +219,12 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        // if (is_return)
-        //     return "";
+        if (is_return){
+            string label="%entry_"+to_string(entry_num);
+            entry_num++;
+            s+=label+":\n";
+            is_return=false;
+        }      
         switch (kind){
             case Kind::Decl:
                 decl->GenerateIR(s);
@@ -500,8 +505,9 @@ public:
                     is_return=false;
                     stmt2_return=true;
                 }
-                if(!stmt1_return||!stmt2_return)
+                if(!stmt1_return||!stmt2_return){
                     s+=end_label+":\n";
+                }
                 return "";
             default:
                 return "";
