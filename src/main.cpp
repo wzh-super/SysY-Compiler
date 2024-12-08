@@ -53,5 +53,15 @@ int main(int argc, const char *argv[]) {
     koopa_delete_raw_program_builder(builder);
 
   }
+  else if(strcmp(mode,"-debug")==0){
+    std::ofstream outFile("debug.txt");
+    std::streambuf* originalBuf = std::cout.rdbuf();
+    std::cout.rdbuf(outFile.rdbuf());
+    ast->Dump();
+    std::cout.rdbuf(originalBuf);
+  }
+  else{
+    assert(false);
+  }
   return 0;
 }

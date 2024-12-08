@@ -28,12 +28,13 @@ using namespace std;
     vector<std::unique_ptr<BaseAST>>* vec_val;
 }
 
-%token INT RETURN CONST
+%token INT RETURN CONST IF ELSE
 %token <str_val> IDENT RELOP EQOP ANDOP OROP
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block BlockItem Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
                 EqExp LAndExp LOrExp Decl ConstDecl ConstDef ConstInitVal LVal ConstExp VarDecl VarDef Initval
+                OpenStmt MatchedStmt
 
 %type <str_val> UnaryOp MulOp AddOp BType
 
@@ -113,49 +114,95 @@ BlockItem
     ;
 
 Stmt
-    : RETURN Exp ';'
+    : OpenStmt
     {
         auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Return;
+        ast->kind=StmtAST::Kind::Open;
+        ast->open_stmt=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | MatchedStmt
+    {
+        auto ast=new StmtAST();
+        ast->kind=StmtAST::Kind::Matched;
+        ast->matched_stmt=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    ;
+
+OpenStmt
+    : IF '(' Exp ')' Stmt
+    {
+        auto ast=new OpenStmtAST();
+        ast->kind=OpenStmtAST::Kind::If;
+        ast->exp=unique_ptr<BaseAST>($3);
+        ast->if_stmt=unique_ptr<BaseAST>($5);
+        $$=ast;
+    }
+    | IF '(' Exp ')' MatchedStmt ELSE OpenStmt
+    {
+        auto ast=new OpenStmtAST();
+        ast->kind=OpenStmtAST::Kind::IfElse;
+        ast->exp=unique_ptr<BaseAST>($3);
+        ast->if_stmt=unique_ptr<BaseAST>($5);
+        ast->else_stmt=unique_ptr<BaseAST>($7);
+        $$=ast;
+    }
+    ;
+
+MatchedStmt
+    : RETURN Exp ';'
+    {
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Return;
         ast->ret="ret";
         ast->exp=unique_ptr<BaseAST>($2);
         $$=ast;
     }
     | LVal '=' Exp ';'
     {
-        auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Assign;
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Assign;
         ast->lval=unique_ptr<BaseAST>($1);
         ast->exp=unique_ptr<BaseAST>($3);
         $$=ast;
     }
     | RETURN ';'
     {
-        auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Return;
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Return;
         ast->ret="ret";
         ast->exp=nullptr;
         $$=ast;
     }
     | Exp ';'
     {
-        auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Exp;
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Exp;
         ast->exp=unique_ptr<BaseAST>($1);
         $$=ast;
     }
     | ';'
     {
-        auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Exp;
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Exp;
         ast->exp=nullptr;
         $$=ast;
     }
     | Block
     {
-        auto ast=new StmtAST();
-        ast->kind=StmtAST::Kind::Block;
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Block;
         ast->block=unique_ptr<BaseAST>($1);
+        $$=ast;
+    }
+    | IF '(' Exp ')' MatchedStmt ELSE MatchedStmt
+    {
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::IfElse;
+        ast->exp=unique_ptr<BaseAST>($3);
+        ast->if_stmt=unique_ptr<BaseAST>($5);
+        ast->else_stmt=unique_ptr<BaseAST>($7);
         $$=ast;
     }
     ;

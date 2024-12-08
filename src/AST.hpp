@@ -11,13 +11,14 @@
 using namespace std;
 
 static int val_num=0;
+static int ifelse_num=0;
 static bool is_return=false;
 
 class SymbolTable{
 public:
     SymbolTable* parent=nullptr;
     map<std::string,std::variant<int,std::string>> table;
-    map<std::string,int> var_table;
+    map<std::string,int> var_table; //存变量值
     std::vector<SymbolTable*> children;
     
     ~SymbolTable(){
@@ -96,8 +97,8 @@ public:
     }
 
     std::string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         func_def->GenerateIR(s);
         return "";
     }
@@ -123,8 +124,8 @@ public:
     }
 
     std::string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         s+="fun @"+ident+"(): ";
         functype->GenerateIR(s);
         s+=" {\n";
@@ -145,8 +146,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         if (type=="int")
             s+="i32";
         return "";
@@ -174,8 +175,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
 
         for (const auto& b_item:blockitem){
             b_item->GenerateIR(s);
@@ -217,8 +218,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         switch (kind){
             case Kind::Decl:
                 decl->GenerateIR(s);
@@ -233,15 +234,163 @@ public:
 
 class StmtAST:public BaseAST{
 public:
-    enum class Kind{Return,Assign,Exp,Block};
+    enum class Kind{Matched,Open};
+    Kind kind;
+    std::unique_ptr<BaseAST> matched_stmt;
+    std::unique_ptr<BaseAST> open_stmt;
+
+    void Dump() const override{
+        std::cout<<"StmtAST { ";
+        switch (kind){
+            case Kind::Matched:
+                matched_stmt->Dump();
+                break;
+            case Kind::Open:
+                open_stmt->Dump();
+                break;
+        }
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        switch (kind){
+            case Kind::Matched:
+                matched_stmt->set_symbol_table(symbol_table);
+                break;
+            case Kind::Open:
+                open_stmt->set_symbol_table(symbol_table);
+                break;
+        }
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        switch (kind){
+            case Kind::Matched:
+                matched_stmt->GenerateIR(s);
+                break;
+            case Kind::Open:
+                open_stmt->GenerateIR(s);
+                break;
+        }
+        return "";
+    }
+};
+
+class OpenStmtAST:public BaseAST{
+public:
+    enum class Kind{If,IfElse};
+    Kind kind;
+    std::unique_ptr<BaseAST> exp;
+    std::unique_ptr<BaseAST> if_stmt;
+    std::unique_ptr<BaseAST> else_stmt;
+
+    void Dump() const override{
+        std::cout<<"OpenStmtAST { ";
+        switch (kind){
+            case Kind::If:
+                std::cout<<"if ";
+                exp->Dump();
+                std::cout<<" ";
+                if_stmt->Dump();
+                std::cout<<" }";
+                break;
+            case Kind::IfElse:
+                std::cout<<"if ";
+                exp->Dump();
+                std::cout<<" ";
+                if_stmt->Dump();
+                std::cout<<"else ";
+                else_stmt->Dump();
+                std::cout<<" }";
+                break;
+        }
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        exp->set_symbol_table(symbol_table);
+        if_stmt->set_symbol_table(symbol_table);
+        if(kind==Kind::IfElse)
+            else_stmt->set_symbol_table(symbol_table);
+    }
+
+    string GenerateIR(string& s)const override{
+        if(kind==Kind::IfElse){
+            string value;
+            string then_label;
+            string else_label;
+            string end_label;
+            bool stmt1_return=false;
+            bool stmt2_return=false;
+            value=exp->GenerateIR(s);
+            then_label="%then_"+to_string(ifelse_num);
+            else_label="%else_"+to_string(ifelse_num);
+            end_label="%end_"+to_string(ifelse_num);
+            ifelse_num++;
+            s+="  br "+value+", "+then_label+", "+else_label+'\n';
+            s+=then_label+":\n";
+            if_stmt->GenerateIR(s);
+            if(!is_return){
+                s+="  jump "+end_label+'\n';
+            }
+            else{
+                is_return=false;
+                stmt1_return=true;
+            }
+            s+=else_label+":\n";
+            else_stmt->GenerateIR(s);
+            if(!is_return){
+                s+="  jump "+end_label+'\n';
+            }
+            else{
+                is_return=false;
+                stmt2_return=true;
+            }
+            if(!stmt1_return||!stmt2_return)
+                s+=end_label+":\n";
+        }
+        else if(kind==Kind::If){
+            string value;
+            string then_label;
+            string end_label;
+            bool stmt_return=false;
+            value=exp->GenerateIR(s);
+            then_label="%then_"+to_string(ifelse_num);
+            end_label="%end_"+to_string(ifelse_num);
+            ifelse_num++;
+            s+="  br "+value+", "+then_label+", "+end_label+'\n';
+            s+=then_label+":\n";
+            if_stmt->GenerateIR(s);
+            if(!is_return){
+                s+="  jump "+end_label+'\n';
+            }
+            else{
+                is_return=false;
+                stmt_return=true;
+            }
+            if(!stmt_return)
+                s+=end_label+":\n";
+        }
+        return "";
+    }
+};
+
+class MatchedStmtAST:public BaseAST{
+public:
+    enum class Kind{Return,Assign,Exp,Block,IfElse};
     Kind kind;
     std::string ret;
     std::unique_ptr<BaseAST> exp;
     std::unique_ptr<BaseAST> lval;
     std::unique_ptr<BaseAST> block;
+    std::unique_ptr<BaseAST> if_stmt;
+    std::unique_ptr<BaseAST> else_stmt;
 
     void Dump() const override{
-        std::cout<<"StmtAST { ";
+        std::cout<<"MatchedStmtAST { ";
         switch (kind){
             case Kind::Return:
                 std::cout<<"return ";
@@ -259,6 +408,12 @@ public:
                 break;
             case Kind::Block:
                 block->Dump();
+                break;
+            case Kind::IfElse:
+                std::cout<<"if ";
+                if_stmt->Dump();
+                std::cout<<"else ";
+                else_stmt->Dump();
                 break;
         }
     }
@@ -281,14 +436,24 @@ public:
                 if(exp!=nullptr)
                     exp->set_symbol_table(symbol_table);
                 break;
+            case Kind::IfElse:
+                exp->set_symbol_table(symbol_table);
+                if_stmt->set_symbol_table(symbol_table);
+                else_stmt->set_symbol_table(symbol_table);
+                break;
         }
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string value;
         string lval_name;
+        string then_label;
+        string else_label;
+        string end_label;
+        bool stmt1_return=false;
+        bool stmt2_return=false;
         if(exp!=nullptr)
             value=exp->GenerateIR(s);
         switch (kind){
@@ -310,14 +475,37 @@ public:
                 return "";
             case Kind::Exp:
                 return value;
+            case Kind::IfElse:
+            //试图用全局的is_return来判断是否有return语句，但是在ifelse语句中，if和else都有可能有return语句
+                then_label="%then_"+to_string(ifelse_num);
+                else_label="%else_"+to_string(ifelse_num);
+                end_label="%end_"+to_string(ifelse_num);
+                ifelse_num++;
+                s+="  br "+value+", "+then_label+", "+else_label+'\n';
+                s+=then_label+":\n";
+                if_stmt->GenerateIR(s);
+                if(!is_return){
+                    s+="  jump "+end_label+'\n';
+                }
+                else{
+                    is_return=false;
+                    stmt1_return=true;
+                }
+                s+=else_label+":\n";
+                else_stmt->GenerateIR(s);
+                if(!is_return){
+                    s+="  jump "+end_label+'\n';
+                }
+                else{
+                    is_return=false;
+                    stmt2_return=true;
+                }
+                if(!stmt1_return||!stmt2_return)
+                    s+=end_label+":\n";
+                return "";
             default:
                 return "";
         }
-        // string value=exp->GenerateIR(s);
-        // s+="  ret ";
-        // s+=value;
-        // s+='\n';
-        // return "";
     }
 };
 
@@ -334,8 +522,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         return to_string(int_const);
     }
 };
@@ -361,8 +549,8 @@ public:
 
     //生成IR时，返回目前变量的名字
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string value;
         value=orexp->GenerateIR(s);
         return value;
@@ -419,8 +607,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val;
         string next_val;
         switch (kind){
@@ -488,8 +676,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val;
         string next_val;
         switch (kind){
@@ -568,8 +756,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -648,8 +836,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -729,8 +917,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -811,8 +999,8 @@ public:
     }
 
     string GenerateIR(string& s)const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -883,8 +1071,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -954,8 +1142,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string current_val_1;
         string current_val_2;
         string next_val;
@@ -1010,8 +1198,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         switch (kind){
             case Kind::Const:
                 constdecl->GenerateIR(s);
@@ -1046,8 +1234,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         for (const auto& c_def:constdef){
             c_def->GenerateIR(s);
         }
@@ -1076,8 +1264,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         symbol_table->Insert(ident,constinitval->compute_exp());
         return "";
     }
@@ -1103,8 +1291,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         constexp->GenerateIR(s);
         return "";
     }
@@ -1140,8 +1328,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         if(symbol_table->isExist(ident)){
             variant<int,string> value=symbol_table->query(ident);
             if (std::holds_alternative<int>(value)){
@@ -1177,8 +1365,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         exp->GenerateIR(s);
         return "";
     }
@@ -1206,8 +1394,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         for (const auto& v_def:vardef){
             v_def->GenerateIR(s);
         }
@@ -1255,8 +1443,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         string name="@"+ident;
         if(var_count.find(ident)==var_count.end()){
             var_count[ident]=1;
@@ -1297,8 +1485,8 @@ public:
     }
 
     string GenerateIR(string& s) const override{
-        if (is_return)
-            return "";
+        // if (is_return)
+        //     return "";
         return exp->GenerateIR(s);;
     }
 };
