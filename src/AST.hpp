@@ -50,6 +50,24 @@ public:
             assert(false);
     }
 
+    int get_val(const std::string& name){
+        if (var_table.find(name)!=var_table.end())
+            return var_table[name];
+        else if (parent!=nullptr)
+            return parent->get_val(name);
+        else
+            assert(false);
+    }
+
+    void set_val(const std::string& name,int value){
+        if (var_table.find(name)!=var_table.end())
+            var_table[name]=value;
+        else if (parent!=nullptr)
+            parent->set_val(name,value);
+        else
+            assert(false);
+    }
+
     SymbolTable* AddChild(){
         SymbolTable* child=new SymbolTable();
         child->parent=this;
@@ -225,12 +243,6 @@ public:
         if(is_return){
             return "";
         }
-        if (is_return){
-            string label="%entry_"+to_string(entry_num);
-            entry_num++;
-            s+=label+":\n";
-            is_return=false;
-        }      
         switch (kind){
             case Kind::Decl:
                 decl->GenerateIR(s);
@@ -370,7 +382,6 @@ public:
             string value;
             string then_label;
             string end_label;
-            bool stmt_return=false;
             value=exp->GenerateIR(s);
             then_label="%then_"+to_string(ifelse_num);
             end_label="%end_"+to_string(ifelse_num);
@@ -383,10 +394,8 @@ public:
             }
             else{
                 is_return=false;
-                stmt_return=true;
             }
-            if(!stmt_return)
-                s+=end_label+":\n";
+            s+=end_label+":\n";
         }
         return "";
     }
@@ -481,7 +490,8 @@ public:
             case Kind::Assign:
                 lval_name=get<string>(symbol_table->query(lval->get_ident()));
                 s+="  store "+value+", "+lval_name+'\n';
-                symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
+                // symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
+                symbol_table->set_val(lval->get_ident(),exp->compute_exp());
                 return "";
             case Kind::Block:
                 block->GenerateIR(s);
@@ -1352,7 +1362,8 @@ public:
                 return get<int>(value);
             }
             else if(std::holds_alternative<string>(value)){
-                return symbol_table->var_table[ident];
+                // return symbol_table->var_table[ident];
+                return symbol_table->get_val(ident);
             }
         }
         assert(false);
