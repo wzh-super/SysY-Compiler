@@ -118,6 +118,9 @@ void Visit(const koopa_raw_function_t& func,string& s){
   }
   for(size_t i=0;i<func->bbs.len;++i){
     auto bb=reinterpret_cast<koopa_raw_basic_block_t>(func->bbs.buffer[i]);
+    if(i!=0){
+      s+=string(bb->name).substr(1)+":\n";
+    }
     for(size_t j=0;j<bb->insts.len;++j){
       auto inst=reinterpret_cast<koopa_raw_value_t>(bb->insts.buffer[j]);
       Visit(inst,arg_map,StackSize,s);
@@ -157,6 +160,12 @@ reg_t Visit(const koopa_raw_value_t& value,map<koopa_raw_value_t,int>& arg_map,i
       reg=Visit(kind.data.load,arg_map,arg_map[value],s);
       break;
     case KOOPA_RVT_ALLOC:
+      break;
+    case KOOPA_RVT_JUMP:
+      reg=Visit(kind.data.jump,arg_map,s);
+      break;
+    case KOOPA_RVT_BRANCH:
+      reg=Visit(kind.data.branch,arg_map,s);
       break;
     default:
       assert(false);
@@ -351,11 +360,27 @@ reg_t Visit(const koopa_raw_get_elem_ptr_t& get_elem_ptr,map<koopa_raw_value_t,i
 }
 
 reg_t Visit(const koopa_raw_branch_t& branch,map<koopa_raw_value_t,int>& arg_map,string& s){
-  assert(false);
+  reg_t reg;
+  reg=get_reg();
+  string regname=reg_name[reg.tag];
+  if(branch.cond->kind.tag==KOOPA_RVT_INTEGER){
+    int num=branch.cond->kind.data.integer.value;
+    s+="  li "+regname+", "+to_string(num)+"\n";
+  }
+  else{
+    int bias=arg_map[branch.cond];
+    s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+  }
+  s+="  bnez "+regname+", "+string(branch.true_bb->name).substr(1)+"\n";
+  s+="  j "+string(branch.false_bb->name).substr(1)+"\n";
+  reg_states[reg.tag]=0;
+  return reg;
 }
 
 reg_t Visit(const koopa_raw_jump_t& jump,map<koopa_raw_value_t,int>& arg_map,string& s){
-  assert(false);
+  s+="  j "+string(jump.target->name).substr(1)+"\n";
+  reg_t reg;
+  return reg;
 }
 
 reg_t Visit(const koopa_raw_call_t& call,map<koopa_raw_value_t,int>& arg_map,string& s){
