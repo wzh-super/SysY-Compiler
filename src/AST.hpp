@@ -222,6 +222,9 @@ public:
     }
 
     string GenerateIR(string& s) const override{
+        if(is_return){
+            return "";
+        }
         if (is_return){
             string label="%entry_"+to_string(entry_num);
             entry_num++;
@@ -356,6 +359,9 @@ public:
             else{
                 is_return=false;
                 stmt2_return=true;
+            }
+            if(stmt1_return&&stmt2_return){
+                is_return=true;
             }
             if(!stmt1_return||!stmt2_return)
                 s+=end_label+":\n";
