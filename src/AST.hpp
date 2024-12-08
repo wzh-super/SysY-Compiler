@@ -508,6 +508,9 @@ public:
                     is_return=false;
                     stmt2_return=true;
                 }
+                if(stmt1_return&&stmt2_return){
+                    is_return=true;
+                }
                 if(!stmt1_return||!stmt2_return){
                     s+=end_label+":\n";
                 }
