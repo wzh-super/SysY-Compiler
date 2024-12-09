@@ -598,7 +598,8 @@ public:
                 find_current_while=current_while.top();
                 s+="  jump %while_end_"+to_string(find_current_while)+'\n';
                 //再生成一个标签，处理后面的while中语句
-                s+="%while_body_"+to_string(find_current_while)+"_another:\n";
+                s+="%while_body_"+to_string(find_current_while)+"_break_"+=to_string(break_num)+":\n";
+                break_num++;
                 return "";
             case Kind::Continue:
                 if(current_while.empty()){
@@ -606,7 +607,7 @@ public:
                 }
                 find_current_while=current_while.top();
                 s+="  jump %while_entry_"+to_string(find_current_while)+'\n';
-                s+="%while_body_"+to_string(find_current_while)+"_another:\n";
+                s+="%while_body_"+to_string(find_current_while)+"_continue_"+=to_string(continue_num)+":\n";
                 return "";
             default:
                 return "";
