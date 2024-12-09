@@ -56,7 +56,7 @@ public:
     }
 
     int get_val(const std::string& name){
-        if (var_table.find(name)!=var_table.end())
+        if (table.find(name)!=table.end())
             return var_table[name];
         else if (parent!=nullptr)
             return parent->get_val(name);
