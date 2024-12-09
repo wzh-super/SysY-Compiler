@@ -608,6 +608,7 @@ public:
                 find_current_while=current_while.top();
                 s+="  jump %while_entry_"+to_string(find_current_while)+'\n';
                 s+="%while_body_"+to_string(find_current_while)+"_continue_"+=to_string(continue_num)+":\n";
+                continue_num++;
                 return "";
             default:
                 return "";
