@@ -158,10 +158,10 @@ public:
         s+=" {\n";
         s+="%entry:\n";
         block->GenerateIR(s);
-        s+="}";
         if(!is_return){
             s+="  ret 0\n";
         }
+        s+="}";
         symbol_table->RemoveChild(block->symbol_table);
         return "";
     }
