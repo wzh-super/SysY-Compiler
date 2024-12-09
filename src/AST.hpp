@@ -312,11 +312,12 @@ public:
 
 class OpenStmtAST:public BaseAST{
 public:
-    enum class Kind{If,IfElse};
+    enum class Kind{If,IfElse,While};
     Kind kind;
     std::unique_ptr<BaseAST> exp;
     std::unique_ptr<BaseAST> if_stmt;
     std::unique_ptr<BaseAST> else_stmt;
+    std::unique_ptr<BaseAST> while_stmt;
 
     void Dump() const override{
         std::cout<<"OpenStmtAST { ";
@@ -337,15 +338,27 @@ public:
                 else_stmt->Dump();
                 std::cout<<" }";
                 break;
+            case Kind::While:
+                std::cout<<"while ";
+                exp->Dump();
+                std::cout<<" ";
+                while_stmt->Dump();
+                std::cout<<" }";
+                break;
         }
     }
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        exp->set_symbol_table(symbol_table);
-        if_stmt->set_symbol_table(symbol_table);
+        if(exp!=nullptr)
+            exp->set_symbol_table(symbol_table);
+        if(kind==Kind::If||kind==Kind::IfElse)
+            if_stmt->set_symbol_table(symbol_table);
         if(kind==Kind::IfElse)
             else_stmt->set_symbol_table(symbol_table);
+        if(kind==Kind::While){
+            while_stmt->set_symbol_table(symbol_table);
+        }
     }
 
     string GenerateIR(string& s)const override{
@@ -404,6 +417,30 @@ public:
                 is_return=false;
             }
             s+=end_label+":\n";
+        }
+        else if(kind==Kind::While){
+            string while_entry;
+            string while_body;
+            string end_label;
+            current_while.push(while_num);
+            while_entry="%while_entry_"+to_string(while_num);
+            while_body="%while_body_"+to_string(while_num);
+            end_label="%while_end_"+to_string(while_num);
+            while_num++;
+            s+="  jump "+while_entry+'\n';
+            s+=while_entry+":\n";
+            string value=exp->GenerateIR(s);
+            s+="  br "+value+", "+while_body+", "+end_label+'\n';
+            s+=while_body+":\n";
+            while_stmt->GenerateIR(s);
+            if(!is_return){
+                s+="  jump "+while_entry+'\n';
+            }
+            else{
+                is_return=false;
+            }
+            s+=end_label+":\n";
+            current_while.pop();
         }
         return "";
     }

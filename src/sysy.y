@@ -148,6 +148,14 @@ OpenStmt
         ast->else_stmt=unique_ptr<BaseAST>($7);
         $$=ast;
     }
+    | WHILE '(' Exp ')' OpenStmt
+    {
+        auto ast=new OpenStmtAST();
+        ast->kind=OpenStmtAST::Kind::While;
+        ast->exp=unique_ptr<BaseAST>($3);
+        ast->while_stmt=unique_ptr<BaseAST>($5);
+        $$=ast;
+    }
     ;
 
 MatchedStmt
