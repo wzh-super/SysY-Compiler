@@ -7,6 +7,7 @@
 #include <map>
 #include <cassert>
 #include <variant>
+#include <stack>
 
 using namespace std;
 
@@ -14,6 +15,10 @@ static int val_num=0;
 static int ifelse_num=0;
 static bool is_return=false;
 static int entry_num=1;
+static int while_num=0;
+static int break_num=0;
+static int continue_num=0;
+static stack<int> current_while;
 
 class SymbolTable{
 public:
@@ -406,7 +411,7 @@ public:
 
 class MatchedStmtAST:public BaseAST{
 public:
-    enum class Kind{Return,Assign,Exp,Block,IfElse};
+    enum class Kind{Return,Assign,Exp,Block,IfElse,While,Break,Continue};
     Kind kind;
     std::string ret;
     std::unique_ptr<BaseAST> exp;
@@ -414,6 +419,7 @@ public:
     std::unique_ptr<BaseAST> block;
     std::unique_ptr<BaseAST> if_stmt;
     std::unique_ptr<BaseAST> else_stmt;
+    std::unique_ptr<BaseAST> while_stmt;
 
     void Dump() const override{
         std::cout<<"MatchedStmtAST { ";
@@ -441,6 +447,17 @@ public:
                 std::cout<<"else ";
                 else_stmt->Dump();
                 break;
+            case Kind::While:
+                std::cout<<"while ";
+                exp->Dump();
+                while_stmt->Dump();
+                break;
+            case Kind::Break:
+                std::cout<<"break"<<endl;
+                break;
+            case Kind::Continue:
+                std::cout<<"continue"<<endl;
+                break;
         }
     }
 
@@ -467,6 +484,12 @@ public:
                 if_stmt->set_symbol_table(symbol_table);
                 else_stmt->set_symbol_table(symbol_table);
                 break;
+            case Kind::While:
+                exp->set_symbol_table(symbol_table);
+                while_stmt->set_symbol_table(symbol_table);
+                break;
+            default:
+                break;
         }
     }
 
@@ -478,12 +501,17 @@ public:
         string then_label;
         string else_label;
         string end_label;
+        string while_entry;
+        string while_body;
+        int find_current_while;
         bool stmt1_return=false;
         bool stmt2_return=false;
-        if(exp!=nullptr)
-            value=exp->GenerateIR(s);
+        // if(exp!=nullptr)
+        //     value=exp->GenerateIR(s);
         switch (kind){
             case Kind::Return:   
+                if(exp!=nullptr)
+                    value=exp->GenerateIR(s);
                 s+="  ret ";
                 if(exp!=nullptr)
                     s+=value;
@@ -491,6 +519,8 @@ public:
                 is_return=true;
                 return "";
             case Kind::Assign:
+                if(exp!=nullptr)
+                    value=exp->GenerateIR(s);
                 lval_name=get<string>(symbol_table->query(lval->get_ident()));
                 s+="  store "+value+", "+lval_name+'\n';
                 // symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
@@ -501,8 +531,12 @@ public:
                 symbol_table->RemoveChild(block->symbol_table);
                 return "";
             case Kind::Exp:
+                if(exp!=nullptr)
+                    value=exp->GenerateIR(s);
                 return value;
             case Kind::IfElse:
+                if(exp!=nullptr)
+                    value=exp->GenerateIR(s);
             //试图用全局的is_return来判断是否有return语句，但是在ifelse语句中，if和else都有可能有return语句
                 then_label="%then_"+to_string(ifelse_num);
                 else_label="%else_"+to_string(ifelse_num);
@@ -533,6 +567,46 @@ public:
                 if(!stmt1_return||!stmt2_return){
                     s+=end_label+":\n";
                 }
+                return "";
+            case Kind::While:
+                current_while.push(while_num);
+                while_entry="%while_entry_"+to_string(while_num);
+                while_body="%while_body_"+to_string(while_num);
+                end_label="%while_end_"+to_string(while_num);
+                while_num++;
+                s+="  jump "+while_entry+'\n';
+                s+=while_entry+":\n";
+                if(exp!=nullptr)
+                    value=exp->GenerateIR(s);
+                s+="  br "+value+", "+while_body+", "+end_label+'\n';
+                s+=while_body+":\n";
+                while_stmt->GenerateIR(s);
+                if(!is_return){
+                    s+="  jump "+while_entry+'\n';
+                }
+                else{
+                    is_return=false;
+                }
+                s+=end_label+":\n";
+                current_while.pop();
+                return "";
+            case Kind::Break:
+            // 先查看break在哪层循环中
+                if(current_while.empty()){
+                    assert(false);
+                }
+                find_current_while=current_while.top();
+                s+="  jump %while_end_"+to_string(find_current_while)+'\n';
+                //再生成一个标签，处理后面的while中语句
+                s+="%while_body_"+to_string(find_current_while)+"_another:\n";
+                return "";
+            case Kind::Continue:
+                if(current_while.empty()){
+                    assert(false);
+                }
+                find_current_while=current_while.top();
+                s+="  jump %while_entry_"+to_string(find_current_while)+'\n';
+                s+="%while_body_"+to_string(find_current_while)+"_another:\n";
                 return "";
             default:
                 return "";

@@ -28,7 +28,7 @@ using namespace std;
     vector<std::unique_ptr<BaseAST>>* vec_val;
 }
 
-%token INT RETURN CONST IF ELSE
+%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE
 %token <str_val> IDENT RELOP EQOP ANDOP OROP
 %token <int_val> INT_CONST
 
@@ -203,6 +203,26 @@ MatchedStmt
         ast->exp=unique_ptr<BaseAST>($3);
         ast->if_stmt=unique_ptr<BaseAST>($5);
         ast->else_stmt=unique_ptr<BaseAST>($7);
+        $$=ast;
+    }
+    | WHILE '(' Exp ')' MatchedStmt
+    {
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::While;
+        ast->exp=unique_ptr<BaseAST>($3);
+        ast->while_stmt=unique_ptr<BaseAST>($5);
+        $$=ast;
+    }
+    | BREAK ';'
+    {
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Break;
+        $$=ast;
+    }
+    | CONTINUE ';'
+    {
+        auto ast=new MatchedStmtAST();
+        ast->kind=MatchedStmtAST::Kind::Continue;
         $$=ast;
     }
     ;
