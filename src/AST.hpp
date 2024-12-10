@@ -684,6 +684,7 @@ public:
 
     int compute_exp() const override{
         return orexp->compute_exp();
+        assert(false);
     }
 
     void set_symbol_table(SymbolTable* table) override{
@@ -748,6 +749,7 @@ public:
             case Kind::LVal:
                 return lval->compute_exp();
         }
+        assert(false);
     }
 
     string GenerateIR(string& s) const override{
@@ -810,9 +812,9 @@ public:
                 return primaryexp->compute_exp();
             case Kind::Unary:
                 if (unaryop=="-")
-                    return -unaryexp->compute_exp();
+                    return -(unaryexp->compute_exp());
                 else if (unaryop=="!")
-                    return !unaryexp->compute_exp();
+                    return !(unaryexp->compute_exp());
                 else if (unaryop=="+")
                     return unaryexp->compute_exp();
         }
