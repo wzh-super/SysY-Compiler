@@ -19,6 +19,7 @@ static int while_num=0;
 static int break_num=0;
 static int continue_num=0;
 static stack<int> current_while;
+static bool current_func_int=false;
 
 class SymbolTable{
 public:
@@ -193,6 +194,12 @@ public:
             s+="\n";
         }
         for(const auto& f_def:func_defs){
+            if(f_def->get_type()=="int"){
+                current_func_int=true;
+            }
+            else{
+                current_func_int=false;
+            }
             f_def->GenerateIR(s);
         }
         // func_def->GenerateIR(s);
@@ -318,6 +325,10 @@ public:
     std::unique_ptr<BaseAST> block;
     bool has_params;
     std::unique_ptr<BaseAST> funcfparams;
+
+    string get_type() const override{
+        return functype->get_type();
+    }
 
     int compute_exp() const override{
         return 0;
@@ -800,6 +811,8 @@ public:
                 s+="  ret ";
                 if(exp!=nullptr)
                     s+=value;
+                if(exp==nullptr&&current_func_int)
+                    s+="0";
                 s+='\n';
                 is_return=true;
                 return "";
