@@ -809,7 +809,7 @@ public:
                 lval_name=get<string>(symbol_table->query(lval->get_ident()));
                 s+="  store "+value+", "+lval_name+'\n';
                 // symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
-                symbol_table->set_val(lval->get_ident(),exp->compute_exp());
+                // symbol_table->set_val(lval->get_ident(),exp->compute_exp());
                 return "";
             case Kind::Block:
                 block->GenerateIR(s);
@@ -1838,6 +1838,7 @@ public:
             }
             else if(std::holds_alternative<string>(value)){
                 // return symbol_table->var_table[ident];
+                assert(false);
                 return symbol_table->get_val(ident);
             }
         }
@@ -1988,7 +1989,7 @@ public:
             s+="global "+name+" = alloc i32";
             if(kind==Kind::Ident){
                 s+=", zeroinit\n";
-                symbol_table->var_table[ident]=0;
+                //symbol_table->var_table[ident]=0;
             }
             else if(kind==Kind::Init){
                 int v=initval->compute_exp();
@@ -1999,7 +2000,7 @@ public:
         else{
             s+="  "+name+" = alloc i32\n";
             if (kind==Kind::Init){
-                symbol_table->var_table[ident]=initval->compute_exp();
+                // symbol_table->var_table[ident]=initval->compute_exp();
                 // cout<<"插入初始值"<<symbol_table->var_table[ident]<<endl;
                 string value=initval->GenerateIR(s);
                 s+="  store "+value+", "+name+'\n';
