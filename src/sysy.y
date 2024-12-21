@@ -28,25 +28,56 @@ using namespace std;
     vector<std::unique_ptr<BaseAST>>* vec_val;
 }
 
-%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE
+%token INT RETURN CONST IF ELSE WHILE BREAK CONTINUE VOID
 %token <str_val> IDENT RELOP EQOP ANDOP OROP
 %token <int_val> INT_CONST
 
 %type <ast_val> FuncDef FuncType Block BlockItem Stmt Exp UnaryExp PrimaryExp Number MulExp AddExp RelExp 
                 EqExp LAndExp LOrExp Decl ConstDecl ConstDef ConstInitVal LVal ConstExp VarDecl VarDef Initval
-                OpenStmt MatchedStmt
+                OpenStmt MatchedStmt CompUnitList FuncFParam FuncFParams FuncRParams
 
-%type <str_val> UnaryOp MulOp AddOp BType
+%type <str_val> UnaryOp MulOp AddOp
 
 %type <vec_val> ConstDefList BlockItemList VarDefList
 
 %%
 
 CompUnit
-    : FuncDef{
-        auto comp_unit=make_unique<CompUnitAST>();
-        comp_unit->func_def=unique_ptr<BaseAST>($1);
+    : CompUnitList
+    {
+        auto comp_unit=unique_ptr<BaseAST>($1);
         ast=move(comp_unit);
+    }
+    ;
+
+CompUnitList
+    : FuncDef
+    {
+        auto comp_unit=new CompUnitAST();
+        auto func_def=unique_ptr<BaseAST>($1);
+        comp_unit->func_defs.push_back(move(func_def));
+        $$=comp_unit;
+    }
+    | Decl
+    {
+        auto comp_unit=new CompUnitAST();
+        auto decl=unique_ptr<BaseAST>($1);
+        comp_unit->decls.push_back(move(decl));
+        $$=comp_unit;
+    }
+    | CompUnitList FuncDef
+    {
+        auto comp_unit=(CompUnitAST*)$1;
+        auto func_def=unique_ptr<BaseAST>($2);
+        comp_unit->func_defs.push_back(move(func_def));
+        $$=comp_unit;
+    }
+    | CompUnitList Decl
+    {
+        auto comp_unit=(CompUnitAST*)$1;
+        auto decl=unique_ptr<BaseAST>($2);
+        comp_unit->decls.push_back(move(decl));
+        $$=comp_unit;
     }
     ;
 
@@ -54,9 +85,20 @@ FuncDef
     : FuncType IDENT '(' ')' Block
     {
         auto ast=new FuncDefAST();
+        ast->has_params=false;
         ast->functype=unique_ptr<BaseAST>($1);
         ast->ident=*unique_ptr<string>($2);
         ast->block=unique_ptr<BaseAST>($5);
+        $$=ast;
+    }
+    | FuncType IDENT '(' FuncFParams ')' Block
+    {
+        auto ast=new FuncDefAST();
+        ast->has_params=true;
+        ast->functype=unique_ptr<BaseAST>($1);
+        ast->ident=*unique_ptr<string>($2);
+        ast->funcfparams=unique_ptr<BaseAST>($4);
+        ast->block=unique_ptr<BaseAST>($6);
         $$=ast;
     }
     ;
@@ -68,7 +110,58 @@ FuncType
         ast->type="int";
         $$=ast;
     }
+    | VOID
+    {
+        auto ast=new FuncTypeAST();
+        ast->type="void";
+        $$=ast;
+    }
     ;
+
+FuncFParam
+    : FuncType IDENT
+    {
+        auto ast=new FuncFParamAST();
+        auto func_type=unique_ptr<BaseAST>($1);
+        auto p=(FuncTypeAST*)func_type.get();
+        ast->btype=p->type;
+        ast->ident=*unique_ptr<string>($2);
+        $$=ast;
+    }
+    ;
+
+FuncFParams
+    : FuncFParam
+    {
+        auto ast=new FuncFParamsAST();
+        auto func_fparam=unique_ptr<BaseAST>($1);
+        ast->FuncFParams.push_back(move(func_fparam));
+        $$=ast;
+    }
+    | FuncFParams ',' FuncFParam
+    {
+        auto ast=(FuncFParamsAST*)$1;
+        auto func_fparam=unique_ptr<BaseAST>($3);
+        ast->FuncFParams.push_back(move(func_fparam));
+        $$=ast;
+    }
+    ;
+
+FuncRParams
+    : Exp
+    {
+        auto ast=new FuncRParamsAST();
+        auto exp=unique_ptr<BaseAST>($1);
+        ast->exps.push_back(move(exp));
+        $$=ast;
+    }
+    | FuncRParams ',' Exp
+    {
+        auto ast=(FuncRParamsAST*)$1;
+        auto exp=unique_ptr<BaseAST>($3);
+        ast->exps.push_back(move(exp));
+        $$=ast;
+    }
 
 Block
     : '{' BlockItemList '}'
@@ -258,6 +351,23 @@ UnaryExp
         ast->kind=UnaryExpAST::Kind::Unary;
         ast->unaryop=*unique_ptr<string>($1);
         ast->unaryexp=unique_ptr<BaseAST>($2);
+        $$=ast;
+    }
+    | IDENT '(' FuncRParams ')'
+    {
+        auto ast=new UnaryExpAST();
+        ast->has_params=true;
+        ast->kind=UnaryExpAST::Kind::FunCall;
+        ast->fun_name=*unique_ptr<string>($1);
+        ast->funcrparams=unique_ptr<BaseAST>($3);
+        $$=ast;
+    }
+    | IDENT '(' ')'
+    {
+        auto ast=new UnaryExpAST();
+        ast->has_params=false;
+        ast->kind=UnaryExpAST::Kind::FunCall;
+        ast->fun_name=*unique_ptr<string>($1);
         $$=ast;
     }
     ;
@@ -486,22 +596,16 @@ ConstDefList
     ;
 
 ConstDecl
-    : CONST BType ConstDefList ';'
+    : CONST FuncType ConstDefList ';'
     {
         auto ast=new ConstDeclAST();
-        ast->btype=*unique_ptr<string>($2);
+        auto func_type=unique_ptr<BaseAST>($2);
+        auto p=(FuncTypeAST*)func_type.get();
+        ast->btype=p->type;
         vector<std::unique_ptr<BaseAST>>* vec=$3;
         ast->constdef=move(*vec);
         delete vec;
         $$=ast;
-    }
-    ;
-
-BType
-    : INT
-    {
-        std::string* str=new string("int");
-        $$=str;
     }
     ;
 
@@ -585,10 +689,12 @@ Initval
     ;
 
 VarDecl
-    : BType VarDefList ';'
+    : FuncType VarDefList ';'
     {
         auto ast=new VarDeclAST();
-        ast->btype=*unique_ptr<string>($1);
+        auto func_type=unique_ptr<BaseAST>($1);
+        auto p=(FuncTypeAST*)func_type.get();
+        ast->btype=p->type;
         vector<unique_ptr<BaseAST>>* vec=$2;
         ast->vardef=move(*vec);
         delete vec;
@@ -599,5 +705,7 @@ VarDecl
 %%
 
 void yyerror(unique_ptr<BaseAST>& ast,const char* s){
-    cerr<<"error: "<<s<<endl;
+    extern int yylineno;
+    extern char* yytext;
+    cerr<<"error: "<<s<<" at symbol '"<<yytext<<"' on line "<<yylineno<<endl;
 };

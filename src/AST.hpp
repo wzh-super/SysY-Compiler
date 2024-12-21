@@ -106,27 +106,207 @@ public:
     virtual int compute_exp() const { return 0; }
     virtual void set_symbol_table(SymbolTable* table){}
     virtual string get_ident() const { return ""; }
+    virtual string get_type() const { return ""; }
+    virtual string get_name() const { return ""; }
+    virtual void set_global(){return;}
 };
+
+
+enum class FuncType{Int,Void};
+struct Func{
+    string name;
+    FuncType type;
+    vector<string> params;
+    BaseAST* func_def;
+
+    Func(string n, FuncType t, vector<string> p, BaseAST* f)
+        : name(n), type(t), params(p), func_def(f) {}
+
+    Func(){}
+
+    Func& operator =(Func f){
+        name=f.name;
+        type=f.type;
+        params=f.params;
+        func_def=f.func_def;
+        return *this;
+    }
+};
+
+static map<string,Func> func_table;
 
 class CompUnitAST:public BaseAST{
 public:
-    std::unique_ptr<BaseAST> func_def;
+    // std::unique_ptr<BaseAST> func_def;
+    vector<std::unique_ptr<BaseAST>> func_defs;
+    vector<std::unique_ptr<BaseAST>> decls;
 
     void Dump() const override{
         std::cout<<"CompUnitAST { ";
-        func_def->Dump();
+        for(const auto& val:decls){
+            val->Dump();
+            std::cout<<", ";
+        }
+        for(const auto& f_def:func_defs){
+            f_def->Dump();
+            std::cout<<", ";
+        }
+        // func_def->Dump();
         std::cout<<" }";
     }
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        func_def->set_symbol_table(symbol_table->AddChild());
+        for(const auto& decl:decls){
+            decl->set_symbol_table(symbol_table);
+        }
+        for(const auto& f_def:func_defs){
+            f_def->set_symbol_table(symbol_table);
+        }
+        // func_def->set_symbol_table(symbol_table->AddChild());
     }
 
     std::string GenerateIR(string& s) const override{
         // if (is_return)
         //     return "";
-        func_def->GenerateIR(s);
+        s+="decl @getint(): i32\n";
+        s+="decl @getch(): i32\n";
+        s+="decl @getarray(*i32): i32\n";
+        s+="decl @putint(i32)\n";
+        s+="decl @putch(i32)\n";
+        s+="decl @putarray(i32, *i32)\n";
+        s+="decl @starttime()\n";
+        s+="decl @stoptime()\n\n";
+        func_table["getint"]=Func("getint",FuncType::Int,{},nullptr);
+        func_table["getch"]=Func("getch",FuncType::Int,{},nullptr);
+        func_table["getarray"]=Func("getarray",FuncType::Int,{"*i32"},nullptr);
+        func_table["putint"]=Func("putint",FuncType::Void,{"i32"},nullptr);
+        func_table["putch"]=Func("putch",FuncType::Void,{"i32"},nullptr);
+        func_table["putarray"]=Func("putarray",FuncType::Void,{"i32","*i32"},nullptr);
+        func_table["starttime"]=Func("starttime",FuncType::Void,{},nullptr);
+        func_table["stoptime"]=Func("stoptime",FuncType::Void,{},nullptr);
+        for(const auto& decl:decls){
+            decl->set_global();
+            decl->GenerateIR(s);
+        }
+        if(decls.size()!=0){
+            s+="\n";
+        }
+        for(const auto& f_def:func_defs){
+            f_def->GenerateIR(s);
+        }
+        // func_def->GenerateIR(s);
+        return "";
+    }
+};
+
+class FuncFParamsAST:public BaseAST{
+public:
+    vector<std::unique_ptr<BaseAST>> FuncFParams;
+
+    void Dump() const override{
+        std::cout<<"FuncFParamsAST { ";
+        for (const auto& f_param:FuncFParams){
+            f_param->Dump();
+            std::cout<<", ";
+        }
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        for (const auto& f_param:FuncFParams){
+            f_param->set_symbol_table(symbol_table);
+        }
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        for (const auto& f_param:FuncFParams){
+            f_param->GenerateIR(s);
+            s+=", ";
+        }
+        s.pop_back();
+        s.pop_back();
+        return "";
+    }
+};
+
+class FuncFParamAST:public BaseAST{
+public:
+    std::string btype;
+    std::string ident;
+    mutable std::string name;
+
+    string get_ident() const override{
+        return ident;
+    }
+
+    string get_type() const override{
+        return btype;
+    }
+
+    string get_name() const override{
+        return name;
+    }
+
+    void Dump() const override{
+        std::cout<<"FuncFParamAST { "<<btype<<", "<<ident<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        name="@"+ident;
+        if(var_count.find(ident)==var_count.end()){
+            var_count[ident]=1;
+            name+="_"+to_string(var_count[ident]);
+        }
+        else{
+            var_count[ident]++;
+            name+="_"+to_string(var_count[ident]);
+        }
+        s+=name;
+        if(btype=="int")
+            s+=": i32";
+        return "";
+    }
+};
+
+class FuncRParamsAST:public BaseAST{
+public:
+    vector<std::unique_ptr<BaseAST>> exps;
+    mutable vector<string> exp_names;
+
+    void Dump() const override{
+        std::cout<<"FuncRParamsAST { ";
+        for (const auto& exp:exps){
+            exp->Dump();
+            std::cout<<", ";
+        }
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        for (const auto& exp:exps){
+            exp->set_symbol_table(symbol_table);
+        }
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        string exp_name;
+        for (const auto& exp:exps){
+            exp_name=exp->GenerateIR(s);
+            exp_names.push_back(exp_name);
+        }
         return "";
     }
 };
@@ -136,6 +316,12 @@ public:
     std::unique_ptr<BaseAST> functype;
     std::string ident;
     std::unique_ptr<BaseAST> block;
+    bool has_params;
+    std::unique_ptr<BaseAST> funcfparams;
+
+    int compute_exp() const override{
+        return 0;
+    }
 
     void Dump() const override{
         std::cout<<"FuncDefAST { ";
@@ -148,21 +334,79 @@ public:
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
         block->set_symbol_table(symbol_table->AddChild());
+        if(has_params){
+            funcfparams->set_symbol_table(block->symbol_table);
+        }
     }
 
     std::string GenerateIR(string& s) const override{
         // if (is_return)
         //     return "";
-        s+="fun @"+ident+"(): ";
+        if(func_table.find(ident)!=func_table.end()){
+            assert(false);
+        }
+        if(functype->get_type()=="int"){
+            vector<string> params;
+            if(has_params){
+                auto f_params=(FuncFParamsAST*)funcfparams.get();
+                for(const auto& f_param:f_params->FuncFParams){
+                    params.push_back(f_param->get_ident());
+                }
+            }
+            func_table[ident]=Func(ident,FuncType::Int,params,(BaseAST*)this);
+        }
+        else if(functype->get_type()=="void"){
+            vector<string> params;
+            if(has_params){
+                auto f_params=(FuncFParamsAST*)funcfparams.get();
+                for(const auto& f_param:f_params->FuncFParams){
+                    params.push_back(f_param->get_ident());
+                }
+            }
+            func_table[ident]=Func(ident,FuncType::Void,params,(BaseAST*)this);
+        }
+        s+="fun @"+ident+"(";
+        if(has_params){
+            funcfparams->GenerateIR(s);
+        }
+        s+=")";
         functype->GenerateIR(s);
-        s+=" {\n";
+        s+="{\n";
         s+="%entry:\n";
+        if(has_params){
+            auto f_params=(FuncFParamsAST*)funcfparams.get();
+            for(const auto& f_param:f_params->FuncFParams){
+                string name="%"+f_param->get_ident();
+                if(var_count.find(f_param->get_ident())!=var_count.end()){
+                    var_count[f_param->get_ident()]++;
+                    name+="_"+to_string(var_count[f_param->get_ident()]);
+                }
+                else{
+                    var_count[f_param->get_ident()]=1;
+                    name+="_1";
+                }
+                if(f_param->get_type()=="int"){
+                    symbol_table->Insert(f_param->get_ident(),name);
+                    s+="  "+name+" = alloc i32\n";
+                    s+="  store "+f_param->get_name()+", "+name+"\n";
+                }
+            }
+        }
         block->GenerateIR(s);
         if(!is_return){
-            s+="  ret 0\n";
+            if(functype->get_type()=="int"){
+                s+="  ret 0\n";
+            }
+            else if(functype->get_type()=="void"){
+                s+="  ret\n";
+            }
         }
-        s+="}";
+        s+="}\n";
         symbol_table->RemoveChild(block->symbol_table);
+        if(is_return){
+            is_return=false;
+        }
+        val_num=0;
         return "";
     }
 };
@@ -175,11 +419,15 @@ public:
         std::cout<<"FuncTypeAST { "<<type<<" }";
     }
 
+    string get_type() const override{
+        return type;
+    }
+
     string GenerateIR(string& s) const override{
         // if (is_return)
         //     return "";
         if (type=="int")
-            s+="i32";
+            s+=": i32 ";
         return "";
     }
 };
@@ -774,11 +1022,14 @@ public:
 
 class UnaryExpAST:public BaseAST{
 public:
-    enum class Kind{Primary,Unary};
+    enum class Kind{Primary,Unary,FunCall};
     Kind kind;
     std::unique_ptr<BaseAST> primaryexp;
     std::string unaryop;
     std::unique_ptr<BaseAST> unaryexp;
+    std::string fun_name;
+    std::unique_ptr<BaseAST> funcrparams;
+    bool has_params;
 
     void Dump() const override{
         std::cout<<"UnaryExpAST { ";
@@ -789,6 +1040,12 @@ public:
             case Kind::Unary:
                 std::cout<<unaryop;
                 unaryexp->Dump();
+                break;
+            case Kind::FunCall:
+                std::cout<<"call"<<fun_name;
+                if(has_params){
+                    funcrparams->Dump();
+                }
                 break;
         }
         std::cout<<" }";
@@ -802,6 +1059,11 @@ public:
                 break;
             case Kind::Unary:
                 unaryexp->set_symbol_table(symbol_table);
+                break;
+            case Kind::FunCall:
+                if(has_params){
+                    funcrparams->set_symbol_table(symbol_table);
+                }
                 break;
         }
     }
@@ -817,6 +1079,8 @@ public:
                     return !(unaryexp->compute_exp());
                 else if (unaryop=="+")
                     return unaryexp->compute_exp();
+            case Kind::FunCall:
+                break;
         }
         assert(false);
     }
@@ -843,6 +1107,41 @@ public:
                 }    
                 else if(unaryop=="+"){
                     next_val=current_val;
+                }
+                break;
+            case Kind::FunCall:
+                if(func_table[fun_name].type==FuncType::Int){
+                    if(has_params){
+                        funcrparams->GenerateIR(s);
+                    }
+                    next_val="%"+to_string(val_num++);
+                    s+="  "+next_val+" = call @"+fun_name+"(";
+                    if(has_params){
+                        auto r_params=(FuncRParamsAST*)funcrparams.get();
+                        for(const auto& r_param:r_params->exp_names){
+                            s+=r_param+", ";
+                        }
+                        s.pop_back();
+                        s.pop_back();
+                    }
+                    s+=")\n";
+                    return next_val;
+                }
+                else if(func_table[fun_name].type==FuncType::Void){
+                    if(has_params){
+                        funcrparams->GenerateIR(s);
+                    }
+                    s+="  call @"+fun_name+"(";
+                    if(has_params){
+                        auto r_params=(FuncRParamsAST*)funcrparams.get();
+                        for(const auto& r_param:r_params->exp_names){
+                            s+=r_param+", ";
+                        }
+                        s.pop_back();
+                        s.pop_back();
+                    }
+                    s+=")\n";
+                    return "";
                 }
                 break;
         }
@@ -1222,7 +1521,7 @@ public:
         string current_val_1;
         string current_val_2;
         string next_val;
-        int tmp_val;
+        string tmp_val;
         switch (kind){
             case Kind::Eq:
                 current_val_2=eqexp->GenerateIR(s);
@@ -1230,10 +1529,14 @@ public:
                 break;
             case Kind::And:
                 current_val_1=landexp->GenerateIR(s);
-                tmp_val=landexp->compute_exp();
-                if(tmp_val==0){
-                    return current_val_1;
-                }
+                string then_label="%then_"+to_string(ifelse_num);
+                string else_label="%else_"+to_string(ifelse_num);
+                string end_label="%end_"+to_string(ifelse_num);
+                tmp_val="%"+to_string(val_num++);
+                s+="  "+tmp_val+" = alloc i32\n";
+                ifelse_num++;
+                s+="  br "+current_val_1+", "+then_label+", "+else_label+'\n';
+                s+=then_label+":\n";
                 string tmp_val_1="%"+to_string(val_num++);
                 s+="  "+tmp_val_1+" = ne "+current_val_1+", 0\n";
                 current_val_2=eqexp->GenerateIR(s);
@@ -1241,8 +1544,27 @@ public:
                 s+="  "+tmp_val_2+" = ne "+current_val_2+", 0\n";
                 next_val="%"+to_string(val_num++);
                 s+="  "+next_val+" = and "+tmp_val_1+", "+tmp_val_2+"\n";
+                s+="  store "+next_val+", "+tmp_val+'\n';
+                s+="  jump "+end_label+'\n';
+                s+=else_label+":\n";
+                s+="  store 0, "+tmp_val+'\n';
+                s+="  jump "+end_label+'\n';
+                s+=end_label+":\n";
+                next_val="%"+to_string(val_num++);
+                s+="  "+next_val+" = load "+tmp_val+'\n';
+                // current_val_1=landexp->GenerateIR(s);
+                // tmp_val=landexp->compute_exp();
+                // if(tmp_val==0){
+                //     return current_val_1;
+                // }
+                // string tmp_val_1="%"+to_string(val_num++);
+                // s+="  "+tmp_val_1+" = ne "+current_val_1+", 0\n";
+                // current_val_2=eqexp->GenerateIR(s);
+                // string tmp_val_2="%"+to_string(val_num++);
+                // s+="  "+tmp_val_2+" = ne "+current_val_2+", 0\n";
+                // next_val="%"+to_string(val_num++);
+                // s+="  "+next_val+" = and "+tmp_val_1+", "+tmp_val_2+"\n";
                 // s+="  "+next_val+" = ne "+current_val_2+", 0\n";
-                
                 break;
         }
         return next_val;
@@ -1300,7 +1622,7 @@ public:
         string current_val_1;
         string current_val_2;
         string next_val;
-        int tmp_val;
+        string tmp_val;
         switch (kind){
             case Kind::And:
                 current_val_2=landexp->GenerateIR(s);
@@ -1308,17 +1630,37 @@ public:
                 break;
             case Kind::Or:
                 current_val_1=lorexp->GenerateIR(s);
-                tmp_val=lorexp->compute_exp();
-                if(tmp_val!=0){
-                    next_val="%"+to_string(val_num++);
-                    s+="  "+next_val+" = ne "+current_val_1+", 0\n";
-                    return next_val;
-                }
+                string then_label="%then_"+to_string(ifelse_num);
+                string else_label="%else_"+to_string(ifelse_num);
+                string end_label="%end_"+to_string(ifelse_num);
+                ifelse_num++;
+                tmp_val="%"+to_string(val_num++);
+                s+="  "+tmp_val+" = alloc i32\n";
+                s+="  br "+current_val_1+", "+then_label+", "+else_label+'\n';
+                s+=then_label+":\n";
+                s+="  store 1, "+tmp_val+'\n';
+                s+="  jump "+end_label+'\n';
+                s+=else_label+":\n";
                 current_val_2=landexp->GenerateIR(s);
                 string tmp_val_1="%"+to_string(val_num++);
-                s+="  "+tmp_val_1+" = or "+current_val_1+", "+current_val_2+"\n";
+                s+="  "+tmp_val_1+" = ne "+current_val_2+", 0\n";
+                s+="  store "+tmp_val_1+", "+tmp_val+'\n';
+                s+="  jump "+end_label+'\n';
+                s+=end_label+":\n";
                 next_val="%"+to_string(val_num++);
-                s+="  "+next_val+" = ne "+tmp_val_1+", 0\n";
+                s+="  "+next_val+" = load "+tmp_val+'\n';
+                // current_val_1=lorexp->GenerateIR(s);
+                // tmp_val=lorexp->compute_exp();
+                // if(tmp_val!=0){
+                //     next_val="%"+to_string(val_num++);
+                //     s+="  "+next_val+" = ne "+current_val_1+", 0\n";
+                //     return next_val;
+                // }
+                // current_val_2=landexp->GenerateIR(s);
+                // string tmp_val_1="%"+to_string(val_num++);
+                // s+="  "+tmp_val_1+" = or "+current_val_1+", "+current_val_2+"\n";
+                // next_val="%"+to_string(val_num++);
+                // s+="  "+next_val+" = ne "+tmp_val_1+", 0\n";
                 break;
         }
         return next_val;
@@ -1331,6 +1673,11 @@ public:
     Kind kind;
     std::unique_ptr<BaseAST> constdecl;
     std::unique_ptr<BaseAST> vardecl;
+    bool is_global;
+
+    void set_global() override{
+        is_global=true;
+    }
 
     void Dump() const override{
         std::cout<<"DeclAST { ";
@@ -1362,9 +1709,13 @@ public:
         //     return "";
         switch (kind){
             case Kind::Const:
+                if(is_global)
+                    constdecl->set_global();
                 constdecl->GenerateIR(s);
                 break;
             case Kind::Var:
+                if(is_global)
+                    vardecl->set_global();
                 vardecl->GenerateIR(s);
                 break;
         }
@@ -1376,6 +1727,11 @@ class ConstDeclAST:public BaseAST{
 public:
     std::string btype;
     std::vector<std::unique_ptr<BaseAST>> constdef;
+    bool is_global;
+
+    void set_global() override{
+        is_global=true;
+    }
 
     void Dump() const override{
         std::cout<<"ConstDeclAST { "<<btype;
@@ -1537,6 +1893,11 @@ class VarDeclAST:public BaseAST{
 public:
     std::string btype;
     std::vector<std::unique_ptr<BaseAST>> vardef;
+    bool is_global;
+
+    void set_global() override{
+        is_global=true;
+    }
 
     void Dump() const override{
         std::cout<<"VarDeclAST { "<<btype;
@@ -1558,6 +1919,8 @@ public:
         // if (is_return)
         //     return "";
         for (const auto& v_def:vardef){
+            if(is_global)
+                v_def->set_global();
             v_def->GenerateIR(s);
         }
         return "";
@@ -1570,6 +1933,11 @@ public:
     Kind kind;
     std::string ident;
     std::unique_ptr<BaseAST> initval;
+    bool is_global;
+
+    void set_global() override{
+        is_global=true;
+    }
 
     void Dump() const override{
         std::cout<<"VarDefAST { ";
@@ -1616,11 +1984,26 @@ public:
             name+="_"+to_string(var_count[ident]);
         }
         symbol_table->Insert(ident,name);
-        s+="  "+name+" = alloc i32\n";
-        if (kind==Kind::Init){
-            symbol_table->var_table[ident]=initval->compute_exp();
-            string value=initval->GenerateIR(s);
-            s+="  store "+value+", "+name+'\n';
+        if(is_global){
+            s+="global "+name+" = alloc i32";
+            if(kind==Kind::Ident){
+                s+=", zeroinit\n";
+                symbol_table->var_table[ident]=0;
+            }
+            else if(kind==Kind::Init){
+                int v=initval->compute_exp();
+                symbol_table->var_table[ident]=v;
+                s+=", "+to_string(v)+'\n';
+            }
+        }
+        else{
+            s+="  "+name+" = alloc i32\n";
+            if (kind==Kind::Init){
+                symbol_table->var_table[ident]=initval->compute_exp();
+                // cout<<"插入初始值"<<symbol_table->var_table[ident]<<endl;
+                string value=initval->GenerateIR(s);
+                s+="  store "+value+", "+name+'\n';
+            }
         }
         return "";
     }
