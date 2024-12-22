@@ -162,7 +162,7 @@ public:
             decl->set_symbol_table(symbol_table);
         }
         for(const auto& f_def:func_defs){
-            f_def->set_symbol_table(symbol_table);
+            f_def->set_symbol_table(symbol_table->AddChild());
         }
         // func_def->set_symbol_table(symbol_table->AddChild());
     }
@@ -417,6 +417,7 @@ public:
         if(is_return){
             is_return=false;
         }
+        val_num=0;
         return "";
     }
 };
