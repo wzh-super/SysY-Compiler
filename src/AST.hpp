@@ -417,7 +417,6 @@ public:
         if(is_return){
             is_return=false;
         }
-        val_num=0;
         return "";
     }
 };
@@ -1545,9 +1544,9 @@ public:
                 string then_label="%then_"+to_string(ifelse_num);
                 string else_label="%else_"+to_string(ifelse_num);
                 string end_label="%end_"+to_string(ifelse_num);
+                ifelse_num++;
                 tmp_val="%"+to_string(val_num++);
                 s+="  "+tmp_val+" = alloc i32\n";
-                ifelse_num++;
                 s+="  br "+current_val_1+", "+then_label+", "+else_label+'\n';
                 s+=then_label+":\n";
                 string tmp_val_1="%"+to_string(val_num++);
