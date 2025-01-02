@@ -25,26 +25,44 @@ static bool current_func_int=false;
 static bool in_param=false;
 
 static int get_list_size(int total_size,vector<int>& dims,int prev_size){
-    int dim_num=0;
+    // int dim_num=0;
+    // int size=1;
+    // if(prev_size!=0){
+    //     for(dim_num=0;dim_num<dims.size();dim_num++){
+    //         size*=dims[dim_num];
+    //         if(prev_size<size)
+    //             break;
+    //     }
+    //     if(dim_num==dims.size()){
+    //         assert(false);
+    //     }
+    //     size/=dims[dim_num];
+    // }
+    // else{
+    //     for(dim_num=0;dim_num<dims.size();dim_num++){
+    //         size*=dims[dim_num];
+    //         if(size==total_size)
+    //             break;
+    //     }
+    //     size/=dims[dim_num];
+    // }
     int size=1;
-    if(prev_size!=0){
-        for(dim_num=0;dim_num<dims.size();dim_num++){
-            size*=dims[dim_num];
-            if(prev_size<size)
-                break;
-        }
-        if(dim_num==dims.size()){
-            assert(false);
-        }
-        size/=dims[dim_num];
+    vector<int> total(dims.size(),1);
+    for(int i=0;i<dims.size();i++){
+        size*=dims[i];
+        total[i]=size;
     }
-    else{
-        for(dim_num=0;dim_num<dims.size();dim_num++){
-            size*=dims[dim_num];
-            if(size==total_size)
+    size=prev_size;
+    for(int i=dims.size()-1;i>=0;i--){
+        if(size<total[i])
+            continue;
+        else{
+            size%=total[i];
+            if(size==0){
+                size=total[i];
                 break;
+            }
         }
-        size/=dims[dim_num];
     }
     return size;
 }
