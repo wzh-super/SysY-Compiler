@@ -9,6 +9,7 @@
 #include <variant>
 #include <stack>
 #include <cstring>
+#include <set>
 
 using namespace std;
 
@@ -21,6 +22,7 @@ static int break_num=0;
 static int continue_num=0;
 static stack<int> current_while;
 static bool current_func_int=false;
+static bool in_param=false;
 
 static int get_list_size(int total_size,vector<int>& dims,int prev_size){
     int dim_num=0;
@@ -52,12 +54,66 @@ public:
     SymbolTable* parent=nullptr;
     map<std::string,std::variant<int,std::string>> table;
     map<std::string,int> var_table; //存变量值
+    map<string,int> is_ptr;
+    map<string,int> is_array;
     std::vector<SymbolTable*> children;
     
     ~SymbolTable(){
         for (auto& child:children){
             delete child;
         }
+    }
+
+    void add_ptr(const std::string& name,int len){
+        is_ptr[name]=len;
+    }
+
+    bool is_ptr_var(const std::string& name){
+        if(is_ptr.find(name)!=is_ptr.end()&&table.find(name)!=table.end())
+            return true;
+        else if(table.find(name)!=table.end())
+            return false;
+        else if(parent!=nullptr)
+            return parent->is_ptr_var(name);
+        else
+            return false;
+    }
+
+    int get_ptr_len(const std::string& name){
+        if(is_ptr.find(name)!=is_ptr.end()&&table.find(name)!=table.end())
+            return is_ptr[name];
+        else if(table.find(name)!=table.end())
+            assert(false);
+        else if(parent!=nullptr)
+            return parent->get_ptr_len(name);
+        else
+            assert(false);
+    }
+
+    void add_array(const std::string& name,int len){
+        is_array[name]=len;
+    }
+
+    int get_array_len(const std::string& name){
+        if(is_array.find(name)!=is_array.end()&&table.find(name)!=table.end())
+            return is_array[name];
+        else if(table.find(name)!=table.end())
+            assert(false);
+        else if(parent!=nullptr)
+            return parent->get_array_len(name);
+        else
+            assert(false);
+    }
+
+    bool is_array_var(const std::string& name){
+        if(is_array.find(name)!=is_array.end()&&table.find(name)!=table.end())
+            return true;
+        else if(table.find(name)!=table.end())
+            return false;
+        else if(parent!=nullptr)
+            return parent->is_array_var(name);
+        else
+            return false;
     }
 
     void Insert(const std::string& name,variant<int,string> value){
@@ -138,6 +194,7 @@ public:
     virtual void set_global(){return;}
     virtual int compute_array_init_val(int* array_val,int total_size,vector<int>& dims,int start){return 0;}
     virtual int compute_array_init_string(string* array_val,int total_size,vector<int>& dims,int start,string& s){return 0;}
+    virtual int compute_glob_array_init_string(string* array_val,int total_size,vector<int>& dims,int start,string& s){return 0;}
 };
 
 enum class FuncType{Int,Void};
@@ -270,9 +327,12 @@ public:
 
 class FuncFParamAST:public BaseAST{
 public:
-    std::string btype;
+    enum class Kind{Int,Array};
+    Kind kind;
+    mutable std::string btype;
     std::string ident;
     mutable std::string name;
+    vector<unique_ptr<BaseAST>> constexps;
 
     string get_ident() const override{
         return ident;
@@ -292,6 +352,9 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
+        for (const auto& constexp:constexps){
+            constexp->set_symbol_table(symbol_table);
+        }
     }
 
     string GenerateIR(string& s) const override{
@@ -307,8 +370,18 @@ public:
             name+="_"+to_string(var_count[ident]);
         }
         s+=name;
-        if(btype=="int")
+        if(kind==Kind::Int)
             s+=": i32";
+        else if(kind==Kind::Array){
+            string array_type="i32";
+            if(constexps.size()!=0){
+                for(int j=constexps.size()-1;j>=0;j--){
+                    array_type='['+array_type+", "+to_string(constexps[j]->compute_exp())+']';
+                }
+            }
+            btype='*'+array_type;
+            s+=": "+btype;
+        }
         return "";
     }
 };
@@ -428,6 +501,13 @@ public:
                     symbol_table->Insert(f_param->get_ident(),name);
                     s+="  "+name+" = alloc i32\n";
                     s+="  store "+f_param->get_name()+", "+name+"\n";
+                }
+                else{
+                    symbol_table->Insert(f_param->get_ident(),name);
+                    auto f_p=(FuncFParamAST*)f_param.get();
+                    symbol_table->add_ptr(f_param->get_ident(),f_p->constexps.size()+1);
+                    s+="  "+name+" = alloc "+f_param->get_type()+"\n";
+                    s+="  store "+f_param->get_name()+", "+name+'\n';
                 }
             }
         }
@@ -657,9 +737,9 @@ public:
             bool stmt1_return=false;
             bool stmt2_return=false;
             value=exp->GenerateIR(s);
-            then_label="%then_"+to_string(ifelse_num);
-            else_label="%else_"+to_string(ifelse_num);
-            end_label="%end_"+to_string(ifelse_num);
+            then_label="%lb_then_"+to_string(ifelse_num);
+            else_label="%lb_else_"+to_string(ifelse_num);
+            end_label="%lb_end_"+to_string(ifelse_num);
             ifelse_num++;
             s+="  br "+value+", "+then_label+", "+else_label+'\n';
             s+=then_label+":\n";
@@ -691,8 +771,8 @@ public:
             string then_label;
             string end_label;
             value=exp->GenerateIR(s);
-            then_label="%then_"+to_string(ifelse_num);
-            end_label="%end_"+to_string(ifelse_num);
+            then_label="%lb_then_"+to_string(ifelse_num);
+            end_label="%lb_end_"+to_string(ifelse_num);
             ifelse_num++;
             s+="  br "+value+", "+then_label+", "+end_label+'\n';
             s+=then_label+":\n";
@@ -710,9 +790,9 @@ public:
             string while_body;
             string end_label;
             current_while.push(while_num);
-            while_entry="%while_entry_"+to_string(while_num);
-            while_body="%while_body_"+to_string(while_num);
-            end_label="%while_end_"+to_string(while_num);
+            while_entry="%lb_while_entry_"+to_string(while_num);
+            while_body="%lb_while_body_"+to_string(while_num);
+            end_label="%lb_while_end_"+to_string(while_num);
             while_num++;
             s+="  jump "+while_entry+'\n';
             s+=while_entry+":\n";
@@ -746,6 +826,9 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
+        for (const auto& exp:exps){
+            exp->set_symbol_table(symbol_table);
+        }
     }
 
     string get_ident() const override{
@@ -777,18 +860,61 @@ public:
             }
             else if (std::holds_alternative<string>(value)){
                 if(kind==Kind::Int){
+                    if(in_param&&symbol_table->is_array_var(ident)){
+                        string current_val="%"+to_string(val_num++);
+                        s+="  "+current_val+" = getelemptr "+get<string>(value)+", 0\n";
+                        return current_val;
+                    }
                     string current_val="%"+to_string(val_num++);
                     s+="  "+current_val+" = load "+get<string>(value)+'\n';
                     return current_val;
                 }
                 else if(kind==Kind::Array){
+                    bool is_ptr=symbol_table->is_ptr_var(ident);
                     string name=get<string>(value);
                     string current_val;
                     string next_val;
-                    for(auto& exp:exps){
-                        current_val=exp->GenerateIR(s);
+                    if(in_param){
+                        if(is_ptr){
+                            current_val="%"+to_string(val_num++);
+                            s+="  "+current_val+" = load "+name+'\n';
+                            name=current_val;
+                        }
+                        for(int i=0;i<exps.size();i++){
+                            current_val=exps[i]->GenerateIR(s);
+                            next_val="%"+to_string(val_num++);
+                            if(i==0&&is_ptr){
+                                s+="  "+next_val+" = getptr "+name+", "+current_val+'\n';
+                            }
+                            else{
+                                s+="  "+next_val+" = getelemptr "+name+", "+current_val+'\n';
+                            }
+                            name=next_val;
+                        }
                         next_val="%"+to_string(val_num++);
-                        s+="  "+next_val+" = getelemptr "+name+", "+current_val+'\n';
+                        if((symbol_table->is_array_var(ident)&&exps.size()==symbol_table->get_array_len(ident))||(symbol_table->is_ptr_var(ident)&&exps.size()==symbol_table->get_ptr_len(ident))){
+                            s+="  "+next_val+" = load "+name+'\n';
+                        }
+                        else{
+                            s+="  "+next_val+" = getelemptr "+name+", 0\n";
+                        }
+                        // s+="  "+next_val+" = getelemptr "+name+", 0\n";
+                        return next_val;
+                    }
+                    if(is_ptr){
+                        current_val="%"+to_string(val_num++);
+                        s+="  "+current_val+" = load "+name+'\n';
+                        name=current_val;
+                    }
+                    for(int i=0;i<exps.size();i++){
+                        current_val=exps[i]->GenerateIR(s);
+                        next_val="%"+to_string(val_num++);
+                        if(i==0&&is_ptr){
+                            s+="  "+next_val+" = getptr "+name+", "+current_val+'\n';
+                        }
+                        else{
+                            s+="  "+next_val+" = getelemptr "+name+", "+current_val+'\n';
+                        }
                         name=next_val;
                     }
                     next_val="%"+to_string(val_num++);
@@ -924,10 +1050,21 @@ public:
                     s+="  store "+value+", "+lval_name+'\n';
                 }
                 else if(LVal->kind==LValAST::Kind::Array){
-                    for(auto& exp:LVal->exps){
-                        current_val=exp->GenerateIR(s);
+                    bool is_ptr=symbol_table->is_ptr_var(lval->get_ident());
+                    if(is_ptr){
+                        current_val="%"+to_string(val_num++);
+                        s+="  "+current_val+" = load "+lval_name+'\n';
+                        lval_name=current_val;
+                    }
+                    for(int i=0;i<LVal->exps.size();i++){
+                        current_val=LVal->exps[i]->GenerateIR(s);
                         next_val="%"+to_string(val_num++);
-                        s+="  "+next_val+" = getelemptr "+lval_name+", "+current_val+'\n';
+                        if(i==0&&is_ptr){
+                            s+="  "+next_val+" = getptr "+lval_name+", "+current_val+'\n';
+                        }
+                        else{
+                            s+="  "+next_val+" = getelemptr "+lval_name+", "+current_val+'\n';
+                        }
                         lval_name=next_val;
                     }
                     s+="  store "+value+", "+lval_name+'\n';
@@ -947,9 +1084,9 @@ public:
                 if(exp!=nullptr)
                     value=exp->GenerateIR(s);
             //试图用全局的is_return来判断是否有return语句，但是在ifelse语句中，if和else都有可能有return语句
-                then_label="%then_"+to_string(ifelse_num);
-                else_label="%else_"+to_string(ifelse_num);
-                end_label="%end_"+to_string(ifelse_num);
+                then_label="%lb_then_"+to_string(ifelse_num);
+                else_label="%lb_else_"+to_string(ifelse_num);
+                end_label="%lb_end_"+to_string(ifelse_num);
                 ifelse_num++;
                 s+="  br "+value+", "+then_label+", "+else_label+'\n';
                 s+=then_label+":\n";
@@ -979,9 +1116,9 @@ public:
                 return "";
             case Kind::While:
                 current_while.push(while_num);
-                while_entry="%while_entry_"+to_string(while_num);
-                while_body="%while_body_"+to_string(while_num);
-                end_label="%while_end_"+to_string(while_num);
+                while_entry="%lb_while_entry_"+to_string(while_num);
+                while_body="%lb_while_body_"+to_string(while_num);
+                end_label="%lb_while_end_"+to_string(while_num);
                 while_num++;
                 s+="  jump "+while_entry+'\n';
                 s+=while_entry+":\n";
@@ -1005,9 +1142,9 @@ public:
                     assert(false);
                 }
                 find_current_while=current_while.top();
-                s+="  jump %while_end_"+to_string(find_current_while)+'\n';
+                s+="  jump %lb_while_end_"+to_string(find_current_while)+'\n';
                 //再生成一个标签，处理后面的while中语句
-                s+="%while_body_"+to_string(find_current_while)+"_break_"+to_string(break_num)+":\n";
+                s+="%lb_while_body_"+to_string(find_current_while)+"_break_"+to_string(break_num)+":\n";
                 break_num++;
                 return "";
             case Kind::Continue:
@@ -1015,8 +1152,8 @@ public:
                     assert(false);
                 }
                 find_current_while=current_while.top();
-                s+="  jump %while_entry_"+to_string(find_current_while)+'\n';
-                s+="%while_body_"+to_string(find_current_while)+"_continue_"+to_string(continue_num)+":\n";
+                s+="  jump %lb_while_entry_"+to_string(find_current_while)+'\n';
+                s+="%lb_while_body_"+to_string(find_current_while)+"_continue_"+to_string(continue_num)+":\n";
                 continue_num++;
                 return "";
             default:
@@ -1236,7 +1373,9 @@ public:
             case Kind::FunCall:
                 if(func_table[fun_name].type==FuncType::Int){
                     if(has_params){
+                        in_param=true;
                         funcrparams->GenerateIR(s);
+                        in_param=false;
                     }
                     next_val="%"+to_string(val_num++);
                     s+="  "+next_val+" = call @"+fun_name+"(";
@@ -1253,7 +1392,9 @@ public:
                 }
                 else if(func_table[fun_name].type==FuncType::Void){
                     if(has_params){
+                        in_param=true;
                         funcrparams->GenerateIR(s);
+                        in_param=false;
                     }
                     s+="  call @"+fun_name+"(";
                     if(has_params){
@@ -1653,9 +1794,9 @@ public:
                 break;
             case Kind::And:
                 current_val_1=landexp->GenerateIR(s);
-                string then_label="%then_"+to_string(ifelse_num);
-                string else_label="%else_"+to_string(ifelse_num);
-                string end_label="%end_"+to_string(ifelse_num);
+                string then_label="%lb_then_"+to_string(ifelse_num);
+                string else_label="%lb_else_"+to_string(ifelse_num);
+                string end_label="%lb_end_"+to_string(ifelse_num);
                 ifelse_num++;
                 tmp_val="%"+to_string(val_num++);
                 s+="  "+tmp_val+" = alloc i32\n";
@@ -1754,9 +1895,9 @@ public:
                 break;
             case Kind::Or:
                 current_val_1=lorexp->GenerateIR(s);
-                string then_label="%then_"+to_string(ifelse_num);
-                string else_label="%else_"+to_string(ifelse_num);
-                string end_label="%end_"+to_string(ifelse_num);
+                string then_label="%lb_then_"+to_string(ifelse_num);
+                string else_label="%lb_else_"+to_string(ifelse_num);
+                string end_label="%lb_end_"+to_string(ifelse_num);
                 ifelse_num++;
                 tmp_val="%"+to_string(val_num++);
                 s+="  "+tmp_val+" = alloc i32\n";
@@ -1903,6 +2044,9 @@ public:
         symbol_table=table;
         if(constexp!=nullptr)
             constexp->set_symbol_table(symbol_table);
+        for(auto& constInitval:constInitVals){
+            constInitval->set_symbol_table(symbol_table);
+        }
     }
 
     int compute_exp() const override{
@@ -1968,6 +2112,9 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
+        for(auto& constexp:constexps){
+            constexp->set_symbol_table(symbol_table);
+        }
         constinitval->set_symbol_table(symbol_table);
     }
 
@@ -1996,6 +2143,7 @@ public:
                 name+="_"+to_string(var_count[ident]);
             }
             symbol_table->Insert(ident,name);
+            symbol_table->add_array(ident,constexps.size());
             string array_type="i32";
             vector<int> dims;
             int dim;
@@ -2166,10 +2314,43 @@ public:
         symbol_table=table;
         if(exp!=nullptr)
             exp->set_symbol_table(symbol_table);
+        for(auto& initval:initvals){
+            initval->set_symbol_table(symbol_table);
+        }
     }
 
     int compute_exp() const override{
         return exp->compute_exp();
+    }
+
+    int compute_glob_array_init_string(string* init_array,int total_size,vector<int>& dims,int start,string& s) override{
+        if(kind==Kind::Exp){
+            init_array[start]=to_string(exp->compute_exp());
+            return start+1;
+        }
+        else if(kind==Kind::EmptyArray){
+            return start+total_size;
+        }
+        else if(kind==Kind::Array){
+            int next_start=start;
+            for(auto& initval:initvals){
+                auto init_val=(InitValAST*)initval.get();
+                if(init_val->kind==Kind::Exp){
+                    next_start=init_val->compute_glob_array_init_string(init_array,total_size,dims,next_start,s);
+                }
+                else if(init_val->kind==Kind::EmptyArray){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    next_start=init_val->compute_glob_array_init_string(init_array,new_size,dims,next_start,s);
+                }
+                else if(init_val->kind==Kind::Array){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    // next_start+=(new_size-next_start%new_size);
+                    next_start=init_val->compute_glob_array_init_string(init_array,new_size,dims,next_start,s);
+                }
+            }
+            return start+total_size;
+        }
+        assert(false);
     }
 
     int compute_array_init_string(string* init_array,int total_size,vector<int>& dims,int start,string& s) override{
@@ -2252,6 +2433,9 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
+        for(auto& constexp:constexps){
+            constexp->set_symbol_table(symbol_table);
+        }
         if (kind==Kind::Int_Init||kind==Kind::Array_Init)
             initval->set_symbol_table(symbol_table);
     }
@@ -2287,13 +2471,13 @@ public:
                 if (kind==Kind::Int_Init){
                 // symbol_table->var_table[ident]=initval->compute_exp();
                 // cout<<"插入初始值"<<symbol_table->var_table[ident]<<endl;
-                    s+="  "+name+" = alloc i32\n";
                     string value=initval->GenerateIR(s);
                     s+="  store "+value+", "+name+'\n';
                 }
             }
         }
         else if(kind==Kind::Array_Ident||kind==Kind::Array_Init){
+            symbol_table->add_array(ident,constexps.size());
             string array_type="i32";
             vector<int> dims;
             int dim;
@@ -2317,12 +2501,17 @@ public:
                 for(int i=0;i<total_size;i++){
                     init_array[i]="0";
                 }
-                initval->compute_array_init_string(init_array,total_size,dims,0,s);
                 if(is_global){
                     s+="global ";
                 }
                 else{
                     s+="  ";
+                }
+                if(is_global){
+                    initval->compute_glob_array_init_string(init_array,total_size,dims,0,s);
+                }
+                else{
+                    initval->compute_array_init_string(init_array,total_size,dims,0,s);
                 }
                 s+=name+" = alloc "+array_type;
                 if(is_global){

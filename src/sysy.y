@@ -122,10 +122,34 @@ FuncFParam
     : FuncType IDENT
     {
         auto ast=new FuncFParamAST();
+        ast->kind=FuncFParamAST::Kind::Int;
         auto func_type=unique_ptr<BaseAST>($1);
         auto p=(FuncTypeAST*)func_type.get();
         ast->btype=p->type;
         ast->ident=*unique_ptr<string>($2);
+        $$=ast;
+    }
+    | FuncType IDENT '[' ']'
+    {
+        auto ast=new FuncFParamAST();
+        ast->kind=FuncFParamAST::Kind::Array;
+        auto func_type=unique_ptr<BaseAST>($1);
+        auto p=(FuncTypeAST*)func_type.get();
+        ast->btype=p->type;
+        ast->ident=*unique_ptr<string>($2);
+        $$=ast;
+    }
+    | FuncType IDENT '[' ']' ConstExpList
+    {
+        auto ast=new FuncFParamAST();
+        ast->kind=FuncFParamAST::Kind::Array;
+        auto func_type=unique_ptr<BaseAST>($1);
+        auto p=(FuncTypeAST*)func_type.get();
+        ast->btype=p->type;
+        ast->ident=*unique_ptr<string>($2);
+        vector<unique_ptr<BaseAST>>* vec=$5;
+        ast->constexps=move(*vec);
+        delete vec;
         $$=ast;
     }
     ;
