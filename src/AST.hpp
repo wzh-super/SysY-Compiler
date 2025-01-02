@@ -8,6 +8,7 @@
 #include <cassert>
 #include <variant>
 #include <stack>
+#include <cstring>
 
 using namespace std;
 
@@ -20,6 +21,31 @@ static int break_num=0;
 static int continue_num=0;
 static stack<int> current_while;
 static bool current_func_int=false;
+
+static int get_list_size(int total_size,vector<int>& dims,int prev_size){
+    int dim_num=0;
+    int size=1;
+    if(prev_size!=0){
+        for(dim_num=0;dim_num<dims.size();dim_num++){
+            size*=dims[dim_num];
+            if(prev_size<size)
+                break;
+        }
+        if(dim_num==dims.size()){
+            assert(false);
+        }
+        size/=dims[dim_num];
+    }
+    else{
+        for(dim_num=0;dim_num<dims.size();dim_num++){
+            size*=dims[dim_num];
+            if(size==total_size)
+                break;
+        }
+        size/=dims[dim_num];
+    }
+    return size;
+}
 
 class SymbolTable{
 public:
@@ -110,8 +136,9 @@ public:
     virtual string get_type() const { return ""; }
     virtual string get_name() const { return ""; }
     virtual void set_global(){return;}
+    virtual int compute_array_init_val(int* array_val,int total_size,vector<int>& dims,int start){return 0;}
+    virtual int compute_array_init_string(string* array_val,int total_size,vector<int>& dims,int start,string& s){return 0;}
 };
-
 
 enum class FuncType{Int,Void};
 struct Func{
@@ -201,6 +228,7 @@ public:
                 current_func_int=false;
             }
             f_def->GenerateIR(s);
+            s+="\n";
         }
         // func_def->GenerateIR(s);
         return "";
@@ -705,6 +733,74 @@ public:
     }
 };
 
+class LValAST:public BaseAST{
+public:
+    enum class Kind{Int,Array};
+    Kind kind;
+    std::string ident;
+    vector<std::unique_ptr<BaseAST>> exps;
+
+    void Dump() const override{
+        std::cout<<"LValAST { "<<ident<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+    }
+
+    string get_ident() const override{
+        return ident;
+    }
+
+    int compute_exp() const override{
+        if(symbol_table->isExist(ident)){
+            std::variant<int,string> value=symbol_table->query(ident);
+            if(std::holds_alternative<int>(value)){
+                return get<int>(value);
+            }
+            else if(std::holds_alternative<string>(value)){
+                // return symbol_table->var_table[ident];
+                assert(false);
+                return symbol_table->get_val(ident);
+            }
+        }
+        assert(false);
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        if(symbol_table->isExist(ident)){
+            variant<int,string> value=symbol_table->query(ident);
+            if (std::holds_alternative<int>(value)){
+                return to_string(get<int>(value));
+            }
+            else if (std::holds_alternative<string>(value)){
+                if(kind==Kind::Int){
+                    string current_val="%"+to_string(val_num++);
+                    s+="  "+current_val+" = load "+get<string>(value)+'\n';
+                    return current_val;
+                }
+                else if(kind==Kind::Array){
+                    string name=get<string>(value);
+                    string current_val;
+                    string next_val;
+                    for(auto& exp:exps){
+                        current_val=exp->GenerateIR(s);
+                        next_val="%"+to_string(val_num++);
+                        s+="  "+next_val+" = getelemptr "+name+", "+current_val+'\n';
+                        name=next_val;
+                    }
+                    next_val="%"+to_string(val_num++);
+                    s+="  "+next_val+" = load "+name+'\n';
+                    return next_val;
+                }
+            }
+        }
+       assert(false);
+    }
+};
+
 class MatchedStmtAST:public BaseAST{
 public:
     enum class Kind{Return,Assign,Exp,Block,IfElse,While,Break,Continue};
@@ -794,6 +890,8 @@ public:
         //     return "";
         string value;
         string lval_name;
+        string current_val;
+        string next_val;
         string then_label;
         string else_label;
         string end_label;
@@ -802,6 +900,7 @@ public:
         int find_current_while;
         bool stmt1_return=false;
         bool stmt2_return=false;
+        LValAST* LVal;
         // if(exp!=nullptr)
         //     value=exp->GenerateIR(s);
         switch (kind){
@@ -819,8 +918,20 @@ public:
             case Kind::Assign:
                 if(exp!=nullptr)
                     value=exp->GenerateIR(s);
+                LVal=(LValAST*)lval.get();
                 lval_name=get<string>(symbol_table->query(lval->get_ident()));
-                s+="  store "+value+", "+lval_name+'\n';
+                if(LVal->kind==LValAST::Kind::Int){
+                    s+="  store "+value+", "+lval_name+'\n';
+                }
+                else if(LVal->kind==LValAST::Kind::Array){
+                    for(auto& exp:LVal->exps){
+                        current_val=exp->GenerateIR(s);
+                        next_val="%"+to_string(val_num++);
+                        s+="  "+next_val+" = getelemptr "+lval_name+", "+current_val+'\n';
+                        lval_name=next_val;
+                    }
+                    s+="  store "+value+", "+lval_name+'\n';
+                }
                 // symbol_table->var_table[lval->get_ident()]=exp->compute_exp();
                 // symbol_table->set_val(lval->get_ident(),exp->compute_exp());
                 return "";
@@ -1686,7 +1797,7 @@ public:
     Kind kind;
     std::unique_ptr<BaseAST> constdecl;
     std::unique_ptr<BaseAST> vardecl;
-    bool is_global;
+    bool is_global=false;
 
     void set_global() override{
         is_global=true;
@@ -1740,7 +1851,7 @@ class ConstDeclAST:public BaseAST{
 public:
     std::string btype;
     std::vector<std::unique_ptr<BaseAST>> constdef;
-    bool is_global;
+    bool is_global=false;
 
     void set_global() override{
         is_global=true;
@@ -1766,16 +1877,88 @@ public:
         // if (is_return)
         //     return "";
         for (const auto& c_def:constdef){
+            if(is_global)
+                c_def->set_global();
             c_def->GenerateIR(s);
         }
         return "";
     }
 };
 
+class ConstInitValAST:public BaseAST{
+public:
+    enum class Kind {Int,Array,EmptyArray};
+    Kind kind;
+    std::unique_ptr<BaseAST> constexp;
+    vector<std::unique_ptr<BaseAST>> constInitVals;
+    bool is_global=false;
+
+    void Dump() const override{
+        std::cout<<"ConstInitValAST { ";
+        constexp->Dump();
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        if(constexp!=nullptr)
+            constexp->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return constexp->compute_exp();
+    }
+
+    void set_global() override{
+        is_global=true;
+    }
+
+    int compute_array_init_val(int* init_array,int total_size,vector<int>& dims,int start) override{
+        if(kind==Kind::Int){
+            init_array[start]=constexp->compute_exp();
+            return start+1;
+        }
+        else if(kind==Kind::EmptyArray){
+            return start+total_size;
+        }
+        else if(kind==Kind::Array){
+            int next_start=start;
+            for(auto& constInitval:constInitVals){
+                auto init_val=(ConstInitValAST*)constInitval.get();
+                if(init_val->kind==Kind::Int){
+                    next_start=constInitval->compute_array_init_val(init_array,total_size,dims,next_start);
+                }
+                else if(init_val->kind==Kind::EmptyArray){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    next_start=constInitval->compute_array_init_val(init_array,new_size,dims,next_start);
+                }
+                else if(init_val->kind==Kind::Array){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    // next_start+=(new_size-next_start%new_size);
+                    next_start=constInitval->compute_array_init_val(init_array,new_size,dims,next_start);
+                }
+            }
+            return start+total_size;
+        }
+        assert(false);
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        constexp->GenerateIR(s);
+        return "";
+    }
+};
+
 class ConstDefAST:public BaseAST{
 public:
+    enum class Kind{Int,Array};
+    Kind kind;
     std::string ident;
+    vector<std::unique_ptr<BaseAST>> constexps;
     std::unique_ptr<BaseAST> constinitval;
+    bool is_global=false;
 
     void Dump() const override{
         std::cout<<"ConstDefAST { "<<ident<<", ";
@@ -1792,87 +1975,107 @@ public:
         return constinitval->compute_exp();
     }
 
-    string GenerateIR(string& s) const override{
-        // if (is_return)
-        //     return "";
-        symbol_table->Insert(ident,constinitval->compute_exp());
-        return "";
-    }
-};
-
-class ConstInitValAST:public BaseAST{
-public:
-    std::unique_ptr<BaseAST> constexp;
-
-    void Dump() const override{
-        std::cout<<"ConstInitValAST { ";
-        constexp->Dump();
-        std::cout<<" }";
-    }
-
-    void set_symbol_table(SymbolTable* table) override{
-        symbol_table=table;
-        constexp->set_symbol_table(symbol_table);
-    }
-
-    int compute_exp() const override{
-        return constexp->compute_exp();
+    void set_global() override{
+        is_global=true;
     }
 
     string GenerateIR(string& s) const override{
         // if (is_return)
         //     return "";
-        constexp->GenerateIR(s);
-        return "";
-    }
-};
-
-class LValAST:public BaseAST{
-public:
-    std::string ident;
-
-    void Dump() const override{
-        std::cout<<"LValAST { "<<ident<<" }";
-    }
-
-    void set_symbol_table(SymbolTable* table) override{
-        symbol_table=table;
-    }
-
-    string get_ident() const override{
-        return ident;
-    }
-
-    int compute_exp() const override{
-        if(symbol_table->isExist(ident)){
-            std::variant<int,string> value=symbol_table->query(ident);
-            if(std::holds_alternative<int>(value)){
-                return get<int>(value);
-            }
-            else if(std::holds_alternative<string>(value)){
-                // return symbol_table->var_table[ident];
-                assert(false);
-                return symbol_table->get_val(ident);
-            }
+        if(kind==Kind::Int){
+            symbol_table->Insert(ident,constinitval->compute_exp());
         }
-        assert(false);
-    }
-
-    string GenerateIR(string& s) const override{
-        // if (is_return)
-        //     return "";
-        if(symbol_table->isExist(ident)){
-            variant<int,string> value=symbol_table->query(ident);
-            if (std::holds_alternative<int>(value)){
-                return to_string(get<int>(value));
+        else if(kind==Kind::Array){
+            string name="@"+ident;
+            if(var_count.find(ident)==var_count.end()){
+                var_count[ident]=1;
+                name+="_"+to_string(var_count[ident]);
             }
-            else if (std::holds_alternative<string>(value)){
-                string current_val="%"+to_string(val_num++);
-                s+="  "+current_val+" = load "+get<string>(value)+'\n';
-                return current_val;
+            else{
+                var_count[ident]++;
+                name+="_"+to_string(var_count[ident]);
             }
+            symbol_table->Insert(ident,name);
+            string array_type="i32";
+            vector<int> dims;
+            int dim;
+            int total_size=1;
+            for (int i=constexps.size()-1;i>=0;i--){
+                dim=constexps[i]->compute_exp();
+                array_type='['+array_type+", "+to_string(dim)+']';
+                dims.push_back(dim);
+                total_size*=dim;
+            }
+            int* init_array=new int[total_size];
+            memset(init_array,0,total_size*sizeof(int));
+            constinitval->compute_array_init_val(init_array,total_size,dims,0);
+            if(is_global){
+                s+="global ";
+            }
+            else{
+                s+="  ";
+            }
+            s+=name+" = alloc "+array_type;
+            if(is_global){
+                constinitval->set_global();
+                s+=", ";
+                auto init_val=(ConstInitValAST*)constinitval.get();
+                if(init_val->kind==ConstInitValAST::Kind::EmptyArray){
+                    s+="zeroinit\n";
+                }
+                else if(init_val->kind==ConstInitValAST::Kind::Array){
+                    string initlist;
+                    vector<int> indexs(dims.size(),0);
+                    int current_size=1;
+                    for(int i=0;i<dims.size();i++){
+                        current_size*=dims[i];
+                        indexs[i]=current_size;
+                    }
+                    for(int i=0;i<total_size;i++){
+                        for(int j=dims.size()-1;j>=0;j--){
+                            if(i%indexs[j]==0){
+                                initlist+="{";
+                            }
+                        }
+                        initlist+=to_string(init_array[i])+", ";
+                        for(int j=0;j<dims.size();j++){
+                            if((i+1)%indexs[j]==0){
+                                initlist.pop_back();
+                                initlist.pop_back();
+                                initlist+="}, ";
+                            }
+                        }
+                    }
+                    initlist.pop_back();
+                    initlist.pop_back();
+                    s+=initlist+'\n';
+                }
+            }
+            else{
+                s+='\n';
+                string val_name;
+                string prev_name;
+                vector<int> indexs(dims.size(),0);
+                for(int i=0;i<total_size;i++){
+                    prev_name=name;
+                    for(int j=dims.size()-1;j>=0;j--){
+                        val_name="%"+to_string(val_num++);
+                        s+="  "+val_name+" = getelemptr "+prev_name+", "+to_string(indexs[j])+'\n';
+                        prev_name=val_name;
+                    }
+                    s+="  store "+to_string(init_array[i])+", "+prev_name+'\n';
+                    indexs[0]++;
+                    for(int j=0;j<dims.size()-1;j++){
+                        if(indexs[j]==dims[j]){
+                            indexs[j]=0;
+                            indexs[j+1]++;
+                        }
+                    }
+                }
+            }
+            delete[] init_array;
         }
-       assert(false);
+        return "";
     }
 };
 
@@ -1907,7 +2110,7 @@ class VarDeclAST:public BaseAST{
 public:
     std::string btype;
     std::vector<std::unique_ptr<BaseAST>> vardef;
-    bool is_global;
+    bool is_global=false;
 
     void set_global() override{
         is_global=true;
@@ -1941,13 +2144,79 @@ public:
     }
 };
 
+class InitValAST:public BaseAST{
+public:
+    enum class Kind{Exp,Array,EmptyArray};
+    Kind kind;
+    std::unique_ptr<BaseAST> exp;
+    std::vector<std::unique_ptr<BaseAST>> initvals;
+    bool is_global=false;
+
+    void set_global() override{
+        is_global=true;
+    }
+
+    void Dump() const override{
+        std::cout<<"InitValAST { ";
+        exp->Dump();
+        std::cout<<" }";
+    }
+
+    void set_symbol_table(SymbolTable* table) override{
+        symbol_table=table;
+        if(exp!=nullptr)
+            exp->set_symbol_table(symbol_table);
+    }
+
+    int compute_exp() const override{
+        return exp->compute_exp();
+    }
+
+    int compute_array_init_string(string* init_array,int total_size,vector<int>& dims,int start,string& s) override{
+        if(kind==Kind::Exp){
+            init_array[start]=exp->GenerateIR(s);
+            return start+1;
+        }
+        else if(kind==Kind::EmptyArray){
+            return start+total_size;
+        }
+        else if(kind==Kind::Array){
+            int next_start=start;
+            for(auto& initval:initvals){
+                auto init_val=(InitValAST*)initval.get();
+                if(init_val->kind==Kind::Exp){
+                    next_start=init_val->compute_array_init_string(init_array,total_size,dims,next_start,s);
+                }
+                else if(init_val->kind==Kind::EmptyArray){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    next_start=init_val->compute_array_init_string(init_array,new_size,dims,next_start,s);
+                }
+                else if(init_val->kind==Kind::Array){
+                    int new_size=get_list_size(total_size,dims,next_start-start);
+                    // next_start+=(new_size-next_start%new_size);
+                    next_start=init_val->compute_array_init_string(init_array,new_size,dims,next_start,s);
+                }
+            }
+            return start+total_size;
+        }
+        assert(false);
+    }
+
+    string GenerateIR(string& s) const override{
+        // if (is_return)
+        //     return "";
+        return exp->GenerateIR(s);;
+    }
+};
+
 class VarDefAST:public BaseAST{
 public:
-    enum class Kind{Ident,Init};
+    enum class Kind{Int_Ident,Array_Ident,Int_Init,Array_Init};
     Kind kind;
     std::string ident;
+    vector<std::unique_ptr<BaseAST>> constexps;
     std::unique_ptr<BaseAST> initval;
-    bool is_global;
+    bool is_global=false;
 
     void set_global() override{
         is_global=true;
@@ -1956,12 +2225,14 @@ public:
     void Dump() const override{
         std::cout<<"VarDefAST { ";
         switch (kind){
-            case Kind::Ident:
+            case Kind::Int_Ident:
                 std::cout<<ident;
                 break;
-            case Kind::Init:
+            case Kind::Int_Init:
                 std::cout<<ident<<", ";
                 initval->Dump();
+                break;
+            default:
                 break;
         }
         std::cout<<" }";
@@ -1969,7 +2240,7 @@ public:
 
     int compute_exp() const override{
         int value=0;
-        if (kind==Kind::Init){
+        if (kind==Kind::Int_Init){
             value=initval->compute_exp();
             symbol_table->var_table[ident]=value;
             return value;
@@ -1981,7 +2252,7 @@ public:
 
     void set_symbol_table(SymbolTable* table) override{
         symbol_table=table;
-        if (kind==Kind::Init)
+        if (kind==Kind::Int_Init||kind==Kind::Array_Init)
             initval->set_symbol_table(symbol_table);
     }
 
@@ -1998,53 +2269,122 @@ public:
             name+="_"+to_string(var_count[ident]);
         }
         symbol_table->Insert(ident,name);
-        if(is_global){
-            s+="global "+name+" = alloc i32";
-            if(kind==Kind::Ident){
-                s+=", zeroinit\n";
-                //symbol_table->var_table[ident]=0;
+        if(kind==Kind::Int_Ident||kind==Kind::Int_Init){
+            if(is_global){
+                s+="global "+name+" = alloc i32";
+                if(kind==Kind::Int_Ident){
+                    s+=", zeroinit\n";
+                    //symbol_table->var_table[ident]=0;
+                }
+                else if(kind==Kind::Int_Init){
+                    int v=initval->compute_exp();
+                    symbol_table->var_table[ident]=v;
+                    s+=", "+to_string(v)+'\n';
+                }
             }
-            else if(kind==Kind::Init){
-                int v=initval->compute_exp();
-                symbol_table->var_table[ident]=v;
-                s+=", "+to_string(v)+'\n';
-            }
-        }
-        else{
-            s+="  "+name+" = alloc i32\n";
-            if (kind==Kind::Init){
+            else{
+                s+="  "+name+" = alloc i32\n";
+                if (kind==Kind::Int_Init){
                 // symbol_table->var_table[ident]=initval->compute_exp();
                 // cout<<"插入初始值"<<symbol_table->var_table[ident]<<endl;
-                string value=initval->GenerateIR(s);
-                s+="  store "+value+", "+name+'\n';
+                    s+="  "+name+" = alloc i32\n";
+                    string value=initval->GenerateIR(s);
+                    s+="  store "+value+", "+name+'\n';
+                }
+            }
+        }
+        else if(kind==Kind::Array_Ident||kind==Kind::Array_Init){
+            string array_type="i32";
+            vector<int> dims;
+            int dim;
+            int total_size=1;
+            for (int i=constexps.size()-1;i>=0;i--){
+                dim=constexps[i]->compute_exp();
+                array_type='['+array_type+", "+to_string(dim)+']';
+                dims.push_back(dim);
+                total_size*=dim;
+            }
+            if(kind==Kind::Array_Ident){
+                if(is_global){
+                    s+="global "+name+" = alloc "+array_type+", zeroinit\n";
+                }
+                else{
+                    s+="  "+name+" = alloc "+array_type+'\n';
+                }
+            }
+            else if(kind==Kind::Array_Init){
+                string* init_array=new string[total_size];
+                for(int i=0;i<total_size;i++){
+                    init_array[i]="0";
+                }
+                initval->compute_array_init_string(init_array,total_size,dims,0,s);
+                if(is_global){
+                    s+="global ";
+                }
+                else{
+                    s+="  ";
+                }
+                s+=name+" = alloc "+array_type;
+                if(is_global){
+                    initval->set_global();
+                    s+=", ";
+                    auto init_val=(InitValAST*)initval.get();
+                    if(init_val->kind==InitValAST::Kind::EmptyArray){
+                        s+="zeroinit\n";
+                    }
+                    else if(init_val->kind==InitValAST::Kind::Array){
+                        string initlist;
+                        vector<int> indexs(dims.size(),0);
+                        int current_size=1;
+                        for(int i=0;i<dims.size();i++){
+                            current_size*=dims[i];
+                            indexs[i]=current_size;
+                        }
+                        for(int i=0;i<total_size;i++){
+                            for(int j=dims.size()-1;j>=0;j--){
+                                if(i%indexs[j]==0){
+                                    initlist+="{";
+                                }
+                            }
+                            initlist+=init_array[i]+", ";
+                            for(int j=0;j<dims.size();j++){
+                                if((i+1)%indexs[j]==0){
+                                    initlist.pop_back();
+                                    initlist.pop_back();
+                                    initlist+="}, ";
+                                }
+                            }
+                        }
+                        initlist.pop_back();
+                        initlist.pop_back();
+                        s+=initlist+'\n';
+                    }
+                }
+                else{
+                    s+='\n';
+                    string val_name;
+                    string prev_name;
+                    vector<int> indexs(dims.size(),0);
+                    for(int i=0;i<total_size;i++){
+                        prev_name=name;
+                        for(int j=dims.size()-1;j>=0;j--){
+                            val_name="%"+to_string(val_num++);
+                            s+="  "+val_name+" = getelemptr "+prev_name+", "+to_string(indexs[j])+'\n';
+                            prev_name=val_name;
+                        }
+                        s+="  store "+init_array[i]+", "+prev_name+'\n';
+                        indexs[0]++;
+                        for(int j=0;j<dims.size()-1;j++){
+                            if(indexs[j]==dims[j]){
+                                indexs[j]=0;
+                                indexs[j+1]++;
+                            }
+                        }
+                    }
+                }
+                delete[] init_array;
             }
         }
         return "";
-    }
-};
-
-class InitValAST:public BaseAST{
-public:
-    std::unique_ptr<BaseAST> exp;
-
-    void Dump() const override{
-        std::cout<<"InitValAST { ";
-        exp->Dump();
-        std::cout<<" }";
-    }
-
-    void set_symbol_table(SymbolTable* table) override{
-        symbol_table=table;
-        exp->set_symbol_table(symbol_table);
-    }
-
-    int compute_exp() const override{
-        return exp->compute_exp();
-    }
-
-    string GenerateIR(string& s) const override{
-        // if (is_return)
-        //     return "";
-        return exp->GenerateIR(s);;
     }
 };
