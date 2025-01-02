@@ -53,16 +53,21 @@ static int get_list_size(int total_size,vector<int>& dims,int prev_size){
         total[i]=size;
     }
     size=prev_size;
-    for(int i=dims.size()-1;i>=0;i--){
-        if(size<total[i])
-            continue;
-        else{
-            size%=total[i];
-            if(size==0){
-                size=total[i];
-                break;
+    if(size!=0){
+        for(int i=dims.size()-1;i>=0;i--){
+            if(size<total[i])
+                continue;
+            else{
+                size%=total[i];
+                if(size==0){
+                    size=total[i];
+                    break;
+                }   
             }
         }
+    }
+    else{
+        size=total_size/total[0];
     }
     return size;
 }
