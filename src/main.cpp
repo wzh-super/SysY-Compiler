@@ -38,7 +38,7 @@ int main(int argc, const char *argv[]) {
     out << koopaIR;
     out.close();
   }
-  else if(strcmp(mode,"-riscv")==0){
+  else if(strcmp(mode,"-riscv")==0||strcmp(mode,"-perf")==0){
     koopa_program_t program;
     koopa_error_code_t ret=koopa_parse_from_string(koopaIR.c_str(),&program);
     assert(ret==KOOPA_EC_SUCCESS);
@@ -51,7 +51,6 @@ int main(int argc, const char *argv[]) {
     out << risc;
     out.close();
     koopa_delete_raw_program_builder(builder);
-
   }
   else if(strcmp(mode,"-debug")==0){
     std::ofstream outFile("debug.txt");
