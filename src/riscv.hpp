@@ -16,6 +16,7 @@ typedef struct{
 
 string reg_name[]={"t0","t1","t2","t3","t4","t5","t6","a0","a1","a2","a3","a4","a5","a6","a7","x0"};
 map<koopa_raw_value_t,reg_t> reg_map;
+static int labelnum=0;
 
 int reg_states[16]={0};
 
@@ -717,8 +718,12 @@ reg_t Visit(const koopa_raw_branch_t& branch,map<koopa_raw_value_t,int>& arg_map
     lw_or_sw(s,bias,"sp",regname,1);
     // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
   }
-  s+="  bnez "+regname+", "+string(branch.true_bb->name).substr(1)+"\n";
+  // s+="  bnez "+regname+", "+string(branch.true_bb->name).substr(1)+"\n";
+  string near_label="a_near_label_"+to_string(labelnum++);
+  s+="  bnez "+regname+", "+near_label+"\n";
   s+="  j "+string(branch.false_bb->name).substr(1)+"\n";
+  s+=near_label+":\n";
+  s+="  j "+string(branch.true_bb->name).substr(1)+"\n";
   reg_states[reg.tag]=0;
   return reg;
 }
