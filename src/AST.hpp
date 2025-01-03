@@ -25,27 +25,6 @@ static bool current_func_int=false;
 static bool in_param=false;
 
 static int get_list_size(int total_size,vector<int>& dims,int prev_size){
-    // int dim_num=0;
-    // int size=1;
-    // if(prev_size!=0){
-    //     for(dim_num=0;dim_num<dims.size();dim_num++){
-    //         size*=dims[dim_num];
-    //         if(prev_size<size)
-    //             break;
-    //     }
-    //     if(dim_num==dims.size()){
-    //         assert(false);
-    //     }
-    //     size/=dims[dim_num];
-    // }
-    // else{
-    //     for(dim_num=0;dim_num<dims.size();dim_num++){
-    //         size*=dims[dim_num];
-    //         if(size==total_size)
-    //             break;
-    //     }
-    //     size/=dims[dim_num];
-    // }
     int size=1;
     vector<int> total(dims.size(),1);
     for(int i=0;i<dims.size();i++){
@@ -67,7 +46,7 @@ static int get_list_size(int total_size,vector<int>& dims,int prev_size){
         }
     }
     else{
-        size=total_size/total[0];
+        size=total_size/dims[0];
     }
     return size;
 }
@@ -2093,7 +2072,7 @@ public:
             for(auto& constInitval:constInitVals){
                 auto init_val=(ConstInitValAST*)constInitval.get();
                 if(init_val->kind==Kind::Int){
-                    next_start=constInitval->compute_array_init_val(init_array,total_size,dims,next_start);
+                    next_start=constInitval->compute_array_init_val(init_array,1,dims,next_start);
                 }
                 else if(init_val->kind==Kind::EmptyArray){
                     int new_size=get_list_size(total_size,dims,next_start-start);
@@ -2359,7 +2338,7 @@ public:
             for(auto& initval:initvals){
                 auto init_val=(InitValAST*)initval.get();
                 if(init_val->kind==Kind::Exp){
-                    next_start=init_val->compute_glob_array_init_string(init_array,total_size,dims,next_start,s);
+                    next_start=init_val->compute_glob_array_init_string(init_array,1,dims,next_start,s);
                 }
                 else if(init_val->kind==Kind::EmptyArray){
                     int new_size=get_list_size(total_size,dims,next_start-start);
@@ -2389,7 +2368,7 @@ public:
             for(auto& initval:initvals){
                 auto init_val=(InitValAST*)initval.get();
                 if(init_val->kind==Kind::Exp){
-                    next_start=init_val->compute_array_init_string(init_array,total_size,dims,next_start,s);
+                    next_start=init_val->compute_array_init_string(init_array,1,dims,next_start,s);
                 }
                 else if(init_val->kind==Kind::EmptyArray){
                     int new_size=get_list_size(total_size,dims,next_start-start);
