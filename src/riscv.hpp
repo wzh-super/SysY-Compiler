@@ -72,14 +72,16 @@ void Visit(const koopa_raw_slice_t& slice,string& s){
     auto ptr=slice.buffer[i];
     switch (slice.kind){
       case KOOPA_RSIK_FUNCTION:
-        if(reinterpret_cast<koopa_raw_function_t>(ptr)->bbs.len!=0)
+        if(reinterpret_cast<koopa_raw_function_t>(ptr)->bbs.len!=0){
           Visit(reinterpret_cast<koopa_raw_function_t>(ptr),s);
+        }
         break;
       case KOOPA_RSIK_BASIC_BLOCK:
         Visit(reinterpret_cast<koopa_raw_basic_block_t>(ptr),s);
         break;
       case KOOPA_RSIK_VALUE:
         Visit(reinterpret_cast<koopa_raw_value_t>(ptr),s);
+        s+="\n";
         break;
       default:
         assert(false);
