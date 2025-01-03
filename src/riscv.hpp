@@ -31,6 +31,46 @@ reg_t get_reg(){
   assert(false);
 }
 
+static int cal_size(koopa_raw_type_t ty){
+  // cout<<ty->tag<<endl;
+  if(ty->tag==KOOPA_RTT_INT32)
+    return 4;
+  else if(ty->tag==KOOPA_RTT_POINTER){
+    return 4;
+  }
+  else if(ty->tag==KOOPA_RTT_FUNCTION)
+    return 4;
+  else if(ty->tag==KOOPA_RTT_ARRAY)
+    return ty->data.array.len*cal_size(ty->data.array.base);
+  else
+    assert(false);
+}
+
+static void lw_or_sw(string& s,int mem_off,string src_reg,string dest_reg,bool is_lw){
+    if(mem_off<2048){
+      if(is_lw)
+        s+="  lw "+dest_reg+", "+to_string(mem_off)+"("+src_reg+")\n";
+      else
+        s+="  sw "+dest_reg+", "+to_string(mem_off)+"("+src_reg+")\n";
+    }
+    else{
+      reg_t reg1=get_reg();
+      string reg1name=reg_name[reg1.tag];
+      int b=0;
+      while(mem_off>=2048){
+        mem_off-=2048;
+        b+=2048;
+      }
+      s+="  li "+reg1name+", "+to_string(b)+"\n";
+      s+="  add "+reg1name+", sp, "+reg1name+"\n";
+      if(is_lw)
+        s+="  lw "+dest_reg+", "+to_string(mem_off)+"("+reg1name+")\n";
+      else
+        s+="  sw "+dest_reg+", "+to_string(mem_off)+"("+reg1name+")\n";
+      reg_states[reg1.tag]=0;
+    }
+}
+
 void Visit(const koopa_raw_program_t& program,string& s);
 void Visit(const koopa_raw_slice_t& slice,string& s);
 void Visit(const koopa_raw_function_t& func,string& s);
@@ -46,8 +86,8 @@ reg_t Visit(const koopa_raw_block_arg_ref_t& block_arg_ref,map<koopa_raw_value_t
 reg_t Visit(const koopa_raw_global_alloc_t& global_alloc,map<koopa_raw_value_t,int>& arg_map,string& s);
 reg_t Visit(const koopa_raw_load_t& load,map<koopa_raw_value_t,int>& arg_map,int offset,string& s);
 reg_t Visit(const koopa_raw_store_t& store,map<koopa_raw_value_t,int>& arg_map,int Stacksize,string& s);
-reg_t Visit(const koopa_raw_get_ptr_t& get_ptr,map<koopa_raw_value_t,int>& arg_map,string& s);
-reg_t Visit(const koopa_raw_get_elem_ptr_t& get_elem_ptr,map<koopa_raw_value_t,int>& arg_map,string& s);
+reg_t Visit(const koopa_raw_get_ptr_t& get_ptr,map<koopa_raw_value_t,int>& arg_map,int offset,string& s);
+reg_t Visit(const koopa_raw_get_elem_ptr_t& get_elem_ptr,map<koopa_raw_value_t,int>& arg_map,int offset,string& s);
 reg_t Visit(const koopa_raw_branch_t& branch,map<koopa_raw_value_t,int>& arg_map,string& s);
 reg_t Visit(const koopa_raw_jump_t& jump,map<koopa_raw_value_t,int>& arg_map,string& s);
 reg_t Visit(const koopa_raw_call_t& call,map<koopa_raw_value_t,int>& arg_map,string& s);
@@ -107,8 +147,16 @@ void Visit(const koopa_raw_function_t& func,string& s){
     for(size_t j=0;j<bb->insts.len;++j){
       auto inst=reinterpret_cast<koopa_raw_value_t>(bb->insts.buffer[j]);
       if(inst->ty->tag!=KOOPA_RTT_UNIT||inst->kind.tag==KOOPA_RVT_ALLOC){
-        arg_map[inst]=StackSize;
-        StackSize+=4;
+        if(inst->kind.tag==KOOPA_RVT_ALLOC){
+          arg_map[inst]=StackSize;
+          int size=cal_size(inst->ty->data.pointer.base);
+          StackSize+=size;
+          // cout<<size<<endl;
+        }
+        else{
+          arg_map[inst]=StackSize;
+          StackSize+=4;
+        }
       }
       if(inst->kind.tag==KOOPA_RVT_CALL){
         auto call=inst->kind.data.call;
@@ -122,7 +170,7 @@ void Visit(const koopa_raw_function_t& func,string& s){
   StackSize+=4*callee_param_on_stack;
   StackSize+=4;//return address
   StackSize+=16-StackSize%16;
-  if(StackSize<=2048)
+  if(StackSize<2048)
     s+="  addi sp, sp, -"+to_string(StackSize)+"\n";
   else{
     reg_t reg=get_reg();
@@ -130,9 +178,10 @@ void Visit(const koopa_raw_function_t& func,string& s){
     s+="  sub sp, sp, t0\n";
     reg_states[reg.tag]=0;
   }
-  s+="  sw ra, ";
-  s+=to_string(StackSize-4);
-  s+="(sp)\n";
+  lw_or_sw(s,StackSize-4,"sp","ra",0);
+  // s+="  sw ra, ";
+  // s+=to_string(StackSize-4);
+  // s+="(sp)\n";
   for(size_t i=0;i<func->bbs.len;++i){
     auto bb=reinterpret_cast<koopa_raw_basic_block_t>(func->bbs.buffer[i]);
     if(i!=0){
@@ -151,32 +200,61 @@ void Visit(const koopa_raw_basic_block_t& bb,string& s){
 }
 
 reg_t Visit(const koopa_raw_value_t& value,string& s){
-  assert(value->kind.tag==KOOPA_RVT_GLOBAL_ALLOC);
-  auto global_alloc=value->kind.data.global_alloc;
-  assert(global_alloc.init!=nullptr);
-  s+="  .data\n";
-  s+="  .globl ";
-  string name=value->name;
-  if(name[0]=='@')
-    name=name.substr(1);
-  s+=name+"\n";
-  s+=name+":\n";
-  if(global_alloc.init->kind.tag==KOOPA_RVT_ZERO_INIT){
-    s+="  .zero ";
-    if(global_alloc.init->ty->tag==KOOPA_RTT_INT32){
-      s+="4\n";
+  if(value->kind.tag==KOOPA_RVT_GLOBAL_ALLOC){
+    auto global_alloc=value->kind.data.global_alloc;
+    assert(global_alloc.init!=nullptr);
+    s+="  .data\n";
+    s+="  .globl ";
+    string name=value->name;
+    if(name[0]=='@')
+      name=name.substr(1);
+    s+=name+"\n";
+    s+=name+":\n";
+    if(global_alloc.init->kind.tag==KOOPA_RVT_ZERO_INIT){
+      s+="  .zero ";
+      if(global_alloc.init->ty->tag==KOOPA_RTT_INT32){
+        s+="4\n";
+      }
+      else if(global_alloc.init->ty->tag==KOOPA_RTT_POINTER){
+        s+="4\n";
+      }
+      else if(global_alloc.init->ty->tag==KOOPA_RTT_ARRAY){
+        s+=to_string(cal_size(global_alloc.init->ty));
+        s+="\n";
+      }
+      else{
+        assert(false);
+      }
+    }
+    else if(global_alloc.init->kind.tag==KOOPA_RVT_INTEGER){
+      s+="  .word ";
+      s+=to_string(global_alloc.init->kind.data.integer.value);
+      s+="\n";
+    }
+    else if(global_alloc.init->kind.tag==KOOPA_RVT_AGGREGATE){
+      // cout<<global_alloc.init->kind.data.aggregate.elems.len<<endl;
+      Visit(global_alloc.init,s);
     }
     else{
       assert(false);
     }
   }
-  else if(global_alloc.init->kind.tag==KOOPA_RVT_INTEGER){
-    s+="  .word ";
-    s+=to_string(global_alloc.init->kind.data.integer.value);
-    s+="\n\n";
-  }
-  else{
-    assert(false);
+  else if(value->kind.tag==KOOPA_RVT_AGGREGATE){
+    auto aggregate=value->kind.data.aggregate;
+    for(int i=0;i<aggregate.elems.len;i++){
+      auto elem=reinterpret_cast<koopa_raw_value_t>(aggregate.elems.buffer[i]);
+      if(elem->kind.tag==KOOPA_RVT_INTEGER){
+        s+="  .word ";
+        s+=to_string(elem->kind.data.integer.value);
+        s+="\n";
+      }
+      else if(elem->kind.tag==KOOPA_RVT_AGGREGATE){
+        Visit(elem,s);
+      }
+      else{
+        assert(false);
+      }
+    }
   }
   reg_t reg;
   return reg;
@@ -215,8 +293,15 @@ reg_t Visit(const koopa_raw_value_t& value,map<koopa_raw_value_t,int>& arg_map,i
     case KOOPA_RVT_CALL:
       reg=Visit(kind.data.call,arg_map,s);
       if(value->ty->tag!=KOOPA_RTT_UNIT){
-        s+="  sw a0, "+to_string(arg_map[value]+4*callee_param_on_stack)+"(sp)\n";
+        lw_or_sw(s,arg_map[value]+4*callee_param_on_stack,"sp","a0",0);
+        // s+="  sw a0, "+to_string(arg_map[value]+4*callee_param_on_stack)+"(sp)\n";
       }
+      break;
+    case KOOPA_RVT_GET_ELEM_PTR:
+      reg=Visit(kind.data.get_elem_ptr,arg_map,arg_map[value],s);
+      break;
+    case KOOPA_RVT_GET_PTR:
+      reg=Visit(kind.data.get_ptr,arg_map,arg_map[value],s);
       break;
     default:
       assert(false);
@@ -227,8 +312,9 @@ reg_t Visit(const koopa_raw_value_t& value,map<koopa_raw_value_t,int>& arg_map,i
 void Visit(const koopa_raw_return_t& ret,map<koopa_raw_value_t,int>& arg_map,int Stacksize,string& s){
   koopa_raw_value_t ret_value=ret.value;
   if(ret_value==nullptr){
-    s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
-    if(Stacksize<=2048)
+    lw_or_sw(s,Stacksize-4,"sp","ra",1);
+    // s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
+    if(Stacksize<2048)
       s+="  addi sp, sp, "+to_string(Stacksize)+"\n";
     else{
       reg_t reg=get_reg();
@@ -241,8 +327,9 @@ void Visit(const koopa_raw_return_t& ret,map<koopa_raw_value_t,int>& arg_map,int
   }
   else if (ret_value->kind.tag==KOOPA_RVT_INTEGER){
     s+="  li a0, "+to_string(ret_value->kind.data.integer.value)+"\n";
-    s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
-    if(Stacksize<=2048)
+    lw_or_sw(s,Stacksize-4,"sp","ra",1);
+    // s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
+    if(Stacksize<2048)
       s+="  addi sp, sp, "+to_string(Stacksize)+"\n";
     else{
       reg_t reg=get_reg();
@@ -258,9 +345,11 @@ void Visit(const koopa_raw_return_t& ret,map<koopa_raw_value_t,int>& arg_map,int
 //   s+="  mv a0, "+regname+"\n";
   //此处应该考虑ret_value
   int bias=arg_map[ret_value]+4*callee_param_on_stack;
-  s+="  lw a0, "+to_string(bias)+"(sp)\n";
-  s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
-  if(Stacksize<=2048)
+  lw_or_sw(s,bias,"sp","a0",1);
+  // s+="  lw a0, "+to_string(bias)+"(sp)\n";
+  lw_or_sw(s,Stacksize-4,"sp","ra",1);
+  // s+="  lw ra, "+to_string(Stacksize-4)+"(sp)\n";
+  if(Stacksize<2048)
     s+="  addi sp, sp, "+to_string(Stacksize)+"\n";
   else{
     reg_t reg=get_reg();
@@ -292,14 +381,16 @@ reg_t Visit(const koopa_raw_binary_t& binary,map<koopa_raw_value_t,int>& arg_map
   if(arg_map.find(binary.lhs)!=arg_map.end()){
     bias=arg_map[binary.lhs]+4*callee_param_on_stack;
     reg1=get_reg();
-    s+="  lw "+reg_name[reg1.tag]+", "+to_string(bias)+"(sp)\n";
+    lw_or_sw(s,bias,"sp",reg_name[reg1.tag],1);
+    // s+="  lw "+reg_name[reg1.tag]+", "+to_string(bias)+"(sp)\n";
   }
   else
     reg1=Visit(binary.lhs,arg_map,0,s);
   if(arg_map.find(binary.rhs)!=arg_map.end()){
     bias=arg_map[binary.rhs]+4*callee_param_on_stack;
     reg2=get_reg();
-    s+="  lw "+reg_name[reg2.tag]+", "+to_string(bias)+"(sp)\n";
+    lw_or_sw(s,bias,"sp",reg_name[reg2.tag],1);
+    // s+="  lw "+reg_name[reg2.tag]+", "+to_string(bias)+"(sp)\n";
   }
   else
     reg2=Visit(binary.rhs,arg_map,0,s);
@@ -368,7 +459,8 @@ reg_t Visit(const koopa_raw_binary_t& binary,map<koopa_raw_value_t,int>& arg_map
     default:
       assert(false);
   }
-  s+="  sw "+resultname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+  lw_or_sw(s,offset+4*callee_param_on_stack,"sp",resultname,0);
+  // s+="  sw "+resultname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
   reg_states[reg.tag]=0;
   return reg;
 }
@@ -391,6 +483,19 @@ reg_t Visit(const koopa_raw_global_alloc_t& global_alloc,map<koopa_raw_value_t,i
 
 reg_t Visit(const koopa_raw_load_t& load,map<koopa_raw_value_t,int>& arg_map,int offset,string& s){
   reg_t reg;
+  if(load.src->kind.tag==KOOPA_RVT_GET_ELEM_PTR||load.src->kind.tag==KOOPA_RVT_GET_PTR){
+    reg=get_reg();
+    string regname=reg_name[reg.tag];
+    int bias=arg_map[load.src]+4*callee_param_on_stack;
+    lw_or_sw(s,bias,"sp",regname,1);
+    lw_or_sw(s,0,regname,regname,1);
+    lw_or_sw(s,offset+4*callee_param_on_stack,"sp",regname,0);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+    // s+="  lw "+regname+", 0("+regname+")\n";
+    // s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+    reg_states[reg.tag]=0;
+    return reg;
+  }
   if(load.src->kind.tag==KOOPA_RVT_GLOBAL_ALLOC){
     string name=load.src->name;
     if(name[0]=='@')
@@ -398,16 +503,20 @@ reg_t Visit(const koopa_raw_load_t& load,map<koopa_raw_value_t,int>& arg_map,int
     reg=get_reg();
     string regname=reg_name[reg.tag];
     s+="  la "+regname+", "+name+"\n";
-    s+="  lw "+regname+", 0("+regname+")\n";
-    s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+    lw_or_sw(s,0,regname,regname,1);
+    lw_or_sw(s,offset+4*callee_param_on_stack,"sp",regname,0);
+    // s+="  lw "+regname+", 0("+regname+")\n";
+    // s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
     reg_states[reg.tag]=0;
     return reg;
   }
   reg=get_reg();
   string regname=reg_name[reg.tag];
     int bias=arg_map[load.src]+4*callee_param_on_stack;
-    s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
-    s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+    lw_or_sw(s,bias,"sp",regname,1);
+    lw_or_sw(s,offset+4*callee_param_on_stack,"sp",regname,0);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+    // s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
     reg_states[reg.tag]=0;
     return reg;
 }
@@ -427,12 +536,14 @@ reg_t Visit(const koopa_raw_store_t& store,map<koopa_raw_value_t,int>& arg_map,i
     }
     else{
       int bias=4*(index-8)+Stacksize;
-      s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+      lw_or_sw(s,bias,"sp",regname,1);
+      // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
     }
   }
   else{
     int bias=arg_map[store.value]+4*callee_param_on_stack;
-    s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+    lw_or_sw(s,bias,"sp",regname,1);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
   }
   if(store.dest->kind.tag==KOOPA_RVT_GLOBAL_ALLOC){
     string name=store.dest->name;
@@ -441,24 +552,156 @@ reg_t Visit(const koopa_raw_store_t& store,map<koopa_raw_value_t,int>& arg_map,i
     reg_t dest_reg=get_reg();
     string dest_regname=reg_name[dest_reg.tag];
     s+="  la "+dest_regname+", "+name+"\n";
-    s+="  sw "+regname+", 0("+dest_regname+")\n";
+    lw_or_sw(s,0,dest_regname,regname,0);
+    // s+="  sw "+regname+", 0("+dest_regname+")\n";
+    reg_states[reg.tag]=0;
+    reg_states[dest_reg.tag]=0;
+    return reg;
+  }
+  else if(store.dest->kind.tag==KOOPA_RVT_GET_ELEM_PTR||store.dest->kind.tag==KOOPA_RVT_GET_PTR){
+    reg_t dest_reg;
+    dest_reg=get_reg();
+    string dest_regname=reg_name[dest_reg.tag];
+    int bias=arg_map[store.dest]+4*callee_param_on_stack;
+    lw_or_sw(s,bias,"sp",dest_regname,1);
+    lw_or_sw(s,0,dest_regname,regname,0);
+    // s+="  lw "+dest_regname+", "+to_string(bias)+"(sp)\n";
+    // s+="  sw "+regname+", 0("+dest_regname+")\n";
     reg_states[reg.tag]=0;
     reg_states[dest_reg.tag]=0;
     return reg;
   }
   else{
-    s+="  sw "+regname+", "+to_string(arg_map[store.dest]+4*callee_param_on_stack)+"(sp)\n";
+    lw_or_sw(s,arg_map[store.dest]+4*callee_param_on_stack,"sp",regname,0);
+    // s+="  sw "+regname+", "+to_string(arg_map[store.dest]+4*callee_param_on_stack)+"(sp)\n";
     reg_states[reg.tag]=0;
     return reg;
   }
 }
 
-reg_t Visit(const koopa_raw_get_ptr_t& get_ptr,map<koopa_raw_value_t,int>& arg_map,string& s){
-  assert(false);
+reg_t Visit(const koopa_raw_get_ptr_t& get_ptr,map<koopa_raw_value_t,int>& arg_map,int offset,string& s){
+  reg_t reg;
+  string regname;
+  if(get_ptr.src->kind.tag==KOOPA_RVT_GLOBAL_ALLOC){
+    string name=get_ptr.src->name;
+    if(name[0]=='@')
+      name=name.substr(1);
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    s+="  la "+regname+", "+name+"\n";
+  }
+  else if(get_ptr.src->kind.tag==KOOPA_RVT_ALLOC){
+    int bias=arg_map[get_ptr.src]+4*callee_param_on_stack;
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    if(bias<2048){
+      s+="  addi "+regname+", sp, "+to_string(bias)+"\n";
+    }
+    else{
+      s+="  li "+regname+", "+to_string(bias)+"\n";
+      s+="  add "+regname+", sp, "+regname+"\n"; 
+    }
+  }
+  else{
+    int bias=arg_map[get_ptr.src]+4*callee_param_on_stack;
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    lw_or_sw(s,bias,"sp",regname,1);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+  }
+  reg_t reg1,reg2;
+  string regname1,regname2;
+  if(get_ptr.index->kind.tag==KOOPA_RVT_INTEGER){
+    int num=get_ptr.index->kind.data.integer.value;
+    reg1=get_reg();
+    regname1=reg_name[reg1.tag];
+    s+="  li "+regname1+", "+to_string(num)+"\n";
+  }
+  else{
+    int index_bias=arg_map[get_ptr.index]+4*callee_param_on_stack;
+    reg1=get_reg();
+    regname1=reg_name[reg1.tag];
+    lw_or_sw(s,index_bias,"sp",regname1,1);
+    // s+="  lw "+regname1+", "+to_string(index_bias)+"(sp)\n";
+  }
+  int size;
+  if(get_ptr.src->ty->data.pointer.base->tag==KOOPA_RTT_INT32)
+    size=4;
+  else if(get_ptr.src->ty->data.pointer.base->tag==KOOPA_RTT_ARRAY)
+    size=cal_size(get_ptr.src->ty->data.pointer.base);
+  else
+    assert(false);
+  reg2=get_reg();
+  regname2=reg_name[reg2.tag];
+  s+="  li "+regname2+", "+to_string(size)+"\n";
+  s+="  mul "+regname1+", "+regname1+", "+regname2+"\n";
+  s+="  add "+regname+", "+regname+", "+regname1+"\n";
+  lw_or_sw(s,offset+4*callee_param_on_stack,"sp",regname,0);
+  // s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+  reg_states[reg.tag]=0;
+  reg_states[reg1.tag]=0;
+  reg_states[reg2.tag]=0;
+  return reg;
 }
 
-reg_t Visit(const koopa_raw_get_elem_ptr_t& get_elem_ptr,map<koopa_raw_value_t,int>& arg_map,string& s){
-  assert(false);
+reg_t Visit(const koopa_raw_get_elem_ptr_t& get_elem_ptr,map<koopa_raw_value_t,int>& arg_map,int offset,string& s){
+  reg_t reg;
+  string regname;
+  if(get_elem_ptr.src->kind.tag==KOOPA_RVT_GLOBAL_ALLOC){
+    string name=get_elem_ptr.src->name;
+    if(name[0]=='@')
+      name=name.substr(1);
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    s+="  la "+regname+", "+name+"\n";
+  }
+  else if(get_elem_ptr.src->kind.tag==KOOPA_RVT_ALLOC){
+    int bias=arg_map[get_elem_ptr.src]+4*callee_param_on_stack;
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    if(bias<2048){
+      s+="  addi "+regname+", sp, "+to_string(bias)+"\n";
+    }
+    else{
+      s+="  li "+regname+", "+to_string(bias)+"\n";
+      s+="  add "+regname+", sp, "+regname+"\n"; 
+    }
+  }
+  else{
+    int bias=arg_map[get_elem_ptr.src]+4*callee_param_on_stack;
+    reg=get_reg();
+    regname=reg_name[reg.tag];
+    lw_or_sw(s,bias,"sp",regname,1);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+  }
+  reg_t reg1,reg2;
+  string regname1,regname2;
+  if(get_elem_ptr.index->kind.tag==KOOPA_RVT_INTEGER){
+    int num=get_elem_ptr.index->kind.data.integer.value;
+    reg1=get_reg();
+    regname1=reg_name[reg1.tag];
+    s+="  li "+regname1+", "+to_string(num)+"\n";
+  }
+  else{
+    int index_bias=arg_map[get_elem_ptr.index]+4*callee_param_on_stack;
+    reg1=get_reg();
+    regname1=reg_name[reg1.tag];
+    lw_or_sw(s,index_bias,"sp",regname1,1);
+    // s+="  lw "+regname1+", "+to_string(index_bias)+"(sp)\n";
+  }
+  // cout<<get_elem_ptr.src->ty->data.pointer.base->tag<<endl;
+  int size=cal_size(get_elem_ptr.src->ty->data.pointer.base->data.array.base);
+  reg2=get_reg();
+  regname2=reg_name[reg2.tag];
+  s+="  li "+regname2+", "+to_string(size)+"\n";
+  s+="  mul "+regname1+", "+regname1+", "+regname2+"\n";
+  s+="  add "+regname+", "+regname+", "+regname1+"\n";
+  lw_or_sw(s,offset+4*callee_param_on_stack,"sp",regname,0);
+  // s+="  sw "+regname+", "+to_string(offset+4*callee_param_on_stack)+"(sp)\n";
+  reg_states[reg.tag]=0;
+  reg_states[reg1.tag]=0;
+  reg_states[reg2.tag]=0;
+  return reg;
 }
 
 reg_t Visit(const koopa_raw_branch_t& branch,map<koopa_raw_value_t,int>& arg_map,string& s){
@@ -471,7 +714,8 @@ reg_t Visit(const koopa_raw_branch_t& branch,map<koopa_raw_value_t,int>& arg_map
   }
   else{
     int bias=arg_map[branch.cond]+4*callee_param_on_stack;
-    s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
+    lw_or_sw(s,bias,"sp",regname,1);
+    // s+="  lw "+regname+", "+to_string(bias)+"(sp)\n";
   }
   s+="  bnez "+regname+", "+string(branch.true_bb->name).substr(1)+"\n";
   s+="  j "+string(branch.false_bb->name).substr(1)+"\n";
@@ -496,18 +740,22 @@ reg_t Visit(const koopa_raw_call_t& call,map<koopa_raw_value_t,int>& arg_map,str
       else{
         int bias=4*(i-8);
         s+="  li t0, "+to_string(arg->kind.data.integer.value)+"\n";
-        s+="  sw t0, "+to_string(bias)+"(sp)\n";
+        lw_or_sw(s,bias,"sp","t0",0);
+        // s+="  sw t0, "+to_string(bias)+"(sp)\n";
       }
     }
     else{
       int bias=arg_map[arg]+4*callee_param_on_stack;
       if(i<8){
-        s+="  lw a"+to_string(i)+", "+to_string(bias)+"(sp)\n";
+        lw_or_sw(s,bias,"sp","a"+to_string(i),1);
+        // s+="  lw a"+to_string(i)+", "+to_string(bias)+"(sp)\n";
       }
       else{
         int offset=4*(i-8);
-        s+="  lw t0, "+to_string(bias)+"(sp)\n";
-        s+="  sw t0, "+to_string(offset)+"(sp)\n";
+        lw_or_sw(s,bias,"sp","t0",1);
+        lw_or_sw(s,offset,"sp","t0",0);
+        // s+="  lw t0, "+to_string(bias)+"(sp)\n";
+        // s+="  sw t0, "+to_string(offset)+"(sp)\n";
       }
     }
   }
